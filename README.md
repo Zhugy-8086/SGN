@@ -278,8 +278,6 @@ print(f"Templates: {len(core.templates)}")
 - `TOP_K_L1`: Layer 1 竞争 Top-K
 - `GATE_SPECIALIZE_THRESHOLD`: 软门控专精化阈值
 
-详见 [`相关修复/v5.1.3_multi_layer_changelog.md`](相关修复/v5.1.3_multi_layer_changelog.md)。
-
 ## 评估指标
 
 训练完成后可用的测试:
