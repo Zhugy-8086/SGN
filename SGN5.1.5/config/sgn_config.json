@@ -1,0 +1,100 @@
+{
+  "INPUT_SOURCE_TYPE": "pattern",
+  "VECTOR_FORMULA": "leaf",
+  "VECTOR_GRID": 64,
+  "DATASET_PATH": "",
+  "MAX_NEURONS": 2000,
+  "TOP_K": 100,
+  "MAX_LOCKOUT": 120,
+  "LEARNING_RATE": {
+    "level": 2,
+    "index": 2
+  },
+  "WEAKEN_RATE": {
+    "level": 2,
+    "index": 1
+  },
+  "GAMMA": {
+    "level": 2,
+    "index": 30
+  },
+  "MAX_TEMPLATES": 500,
+  "MAX_ITERATIONS": 10000,
+  "SEED": 43,
+  "FLIP_PROB": 0.1,
+  "NOISE_TYPE": "composite",
+  "NOISE_SIGMA": 32.0,
+  "NOISE_BLOCK_SIZE": 2,
+  "SPARSE_STEP": 200,
+  "COMPACT_INTERVAL": 100,
+  "MODE": "full",
+  "LAYER_MAX": 6,
+  "D": 4096,
+  "ENCOURAGE_CNT": 5,
+  "ENCOURAGE_BONUS": {
+    "level": 2,
+    "index": 10
+  },
+  "SPEED_SAT": {
+    "level": 2,
+    "index": 120
+  },
+  "BASE_INIT": {
+    "level": 2,
+    "index": 50
+  },
+  "HIT_COUNTER_INIT": 128,
+  "MIN_BASE": {
+    "level": 2,
+    "index": 8
+  },
+  "INTENSITY_DIFF_THRESH": 1,
+  "MIN_MARKED_CNT": 2,
+  "OR_THRESH": 85,
+  "AND_THRESH": 80,
+  "AUTO_DELAY_MS": 50,
+  "COLOR_OUTPUT": true,
+  "CHART_BACKEND": "auto",
+  "STORAGE_BACKEND": "json",
+  "AUTOSAVE_STRATEGY": "interval",
+  "ALLOW_LARGE_GRID_DRAW": false,
+  "COLOR_SCHEME": "green",
+  "ENABLED_METRICS": [
+    "accuracy",
+    "confusion",
+    "noise_robustness"
+  ],
+  "TEST_SPLIT": 0.2,
+  "VALIDATION_LABELS": [],
+  "NOISE_TEST_TYPE": "composite",
+  "CROSS_VALIDATE_FOLDS": 0,
+  "ENABLE_GATE_MATCHING": false,
+  "HIST_BUFFER_SIZE": 100,
+  "GATE_HIGH_THRESH": 40,
+  "GATE_LOW_THRESH": 30,
+  "PATCH_SIZE": 4,
+  "MAX_ATOMS": 200,
+  "ENABLE_GRAPH_MODE": false,
+  "STACK_DEPTH": 0,
+  "PARALLEL_VIEWS": 6,
+  "MAX_NODES_PER_LAYER": 50,
+  "MAX_TOTAL_NODES": 5000,
+  "MAX_FEEDBACK_LOOPS": 3,
+  "FEEDBACK_THRESHOLD": 85,
+  "DEMOTION_THRESHOLD": 5,
+  "LAYER_COVER_THRESHOLD": 1000,
+  "GRAPH_SIMILARITY_THRESHOLD": 80,
+  "GRAPH_LEARNING_RATE": 0.3,
+  "GRAPH_PERSISTENCE": true,
+  "INFERENCE_LAYER": 6,
+  "ENABLE_SOFT_GATE": false,
+  "GATE_DECAY_RATE": 1,
+  "GATE_SPECIALIZE_THRESHOLD": 10,
+  "ENABLE_NEURON_SPECIALIZATION": false,
+  "SPECIALIZATION_SPLIT_THRESHOLD": 20,
+  "ENABLE_MULTI_LAYER_NEURON": false,
+  "NEURON_LAYER_0_COUNT": 512,
+  "NEURON_LAYER_1_COUNT": 256,
+  "LAYER1_LEARNING_RATE_SCALE": 0.5,
+  "TOP_K_L1": 4
+}
