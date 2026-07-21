@@ -1,0 +1,44 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.user
+.DS_Store
+Thumbs.db
+
+# SGN runtime artifacts
+*.json.bak
+*.log
+*.tmp
+model_*.json
+models/
+output/
+exports/
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
