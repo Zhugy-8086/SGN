@@ -53,8 +53,6 @@ optimizer.step()
 optimizer.zero_grad()
 ```
 
-> 完整示例见 `examples/mnist_mlp.py`、`examples/cifar10_cnn.py`。
-
 ---
 
 ## 性能亮点（实测，口径见文档）
