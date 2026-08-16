@@ -105,7 +105,6 @@ size-class 分桶 + 线程本地无锁复用，对反复分配同尺寸张量的
 - [SGN 用户使用手册](docs/SGN_用户使用手册.md) — 面向普通用户（无需 C++ 基础）
 - [SGN 性能白皮书](docs/SGN_性能白皮书.md) — 性能基线、SIMD 优化与复现方法
 - [SGN 开发者操作手册](docs/SGN_Autograd_用户操作手册.md) — 面向开发者 / 协作者
-- [MSint 多精度拆分计算范式](docs/msint_multisplit_paradigm/MSint多精度拆分计算范式.md) — 整数路径设计
 
 ---
 
