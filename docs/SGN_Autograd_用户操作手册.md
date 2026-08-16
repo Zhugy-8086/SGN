@@ -70,8 +70,6 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 
 **编译器统一要求**：未来所有 6 个 .pyd 都会迁移到 Clang 22.1.8。详见 [COMPILER_TOOLCHAIN.md §10](COMPILER_TOOLCHAIN.md)。
 
-> ⚠️ Python 3.10 已于 2026-08-01 卸载，旧 .pyd（cp310）已失效，必须用 3.14 重新编译。
-
 ---
 
 ## 3. 构建与安装
