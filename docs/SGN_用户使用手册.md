@@ -6,6 +6,28 @@
 
 ---
 
+## 📑 目录
+
+1. [简介](#1-简介)
+2. [快速开始](#2-快速开始)
+   - [2.1 安装](#21-安装)
+   - [2.2 第一个例子（最小训练闭环）](#22-第一个例子最小训练闭环)
+3. [核心概念](#3-核心概念)
+4. [构建模型](#4-构建模型)
+5. [训练循环](#5-训练循环)
+   - [5.1 推理模式（训练 / 评估切换）](#51-推理模式训练--评估切换)
+6. [反向传播策略](#6-反向传播策略)
+7. [序列化](#7-序列化)
+8. [诊断与工具](#8-诊断与工具)
+9. [Level 调度器](#9-level-调度器)
+10. [数据桥接：与 numpy 互操作](#10-数据桥接与-numpy-互操作)
+11. [常见问题](#11-常见问题)
+12. [完整示例](#12-完整示例)
+- [附录：API 速查](#附录api-速查)
+- [附录：BatchNorm 推理临时处理](#附录batchnorm-推理临时处理)
+
+---
+
 ## 1. 简介
 
 SGN（Structured Gradient Network）是一个以**整数/量化路径为特色**的神经网络框架——它提供了独特的前向整数编码（HC/MSint）与多种量化反向传播策略，用于探索低精度、整数域的深度学习。
@@ -53,7 +75,7 @@ import sgn
 print(sgn.diagnose())  # 打印版本、编译器、CPU 特性、子模块状态
 ```
 
-### 2.2 第一个例子（5 行代码跑通）
+### 2.2 第一个例子（最小训练闭环）
 
 ```python
 import numpy as np
@@ -78,9 +100,16 @@ print(y.to_numpy().shape)  # (4, 10)
 
 # 3. 反向传播
 y.backward(np.ones_like(y.to_numpy()))  # grad 可以是 numpy 数组或 Tensor
+
+# 4. 参数更新（真正的"训练"一步）
+opt = sgn.optim.SGD(model, lr=0.01)
+opt.step()    # 用 p.grad 更新所有参数
+opt.zero_grad()  # 清零梯度，供下一步复用
 ```
 
 > **注意**：`model([x])` 使用方括号将输入包装为列表。这是因为 SGN 的 Module 支持多输入（如 Siamese 网络），即使单输入也需包装成列表。这与 PyTorch 的 `model(x)` 不同，请留意。
+>
+> 上面的示例只展示了**一轮前向 → 反向 → 更新**的最小闭环；一个完整的**训练循环**（数据分批、损失函数、多轮迭代、梯度抽检）见 [第 5 节 训练循环](#5-训练循环)。
 
 ---
 
@@ -359,6 +388,13 @@ model.eval()    # 推理模式
 > - 但**当前 BatchNorm 的 eval（推理）前向尚未实现**：标准层 `BatchNorm2d` 的前向仍按训练模式计算（用当前 batch 统计量，并更新 running 统计），`model.eval()` 目前**不会**自动改用 running 统计。
 > - 因此**现阶段含 BatchNorm 的网络做推理时，需手动处理 BN**（例如自行用保存的 running 统计计算归一化），或关注后续版本对 BN eval 前向的实现。不含 BatchNorm/Dropout 的模型不受影响。
 >
+> 一个**临时用法示例**（推理时手动用 running 统计归一化，三步）：
+> ① 取该层保存的 `running_mean` / `running_var`（shape `(C,)`）；
+> ② 对每个通道 `x_hat = (x - mu) / sqrt(var + eps)`，其中 `eps` 取**训练时相同的值**（通常为 `1e-5`）；
+> ③ `y = gamma * x_hat + beta`。
+> 完整可运行示例见文末「附录：BatchNorm 推理临时处理」。
+>
+> 待后续版本实现 BN eval 前向后，可直接用 `model.eval()` 自动切换，不再需要上述手写。
 > 训练/推理模式切换在框架层面已就绪；此限制的详细说明见开发者手册的"功能限制"一节。
 
 ---
@@ -410,7 +446,7 @@ model.load_state_dict(state)
 # load_state_dict 包含完整 shape 校验
 
 # 加载后做推理前，务必切换到推理模式（详见 5.1）
-model.eval()
+model.eval()   # （若模型含 BatchNorm：当前 eval 前向尚未实现，还需按 5.1 的临时用法手动处理 running 统计）
 ```
 
 ---
@@ -449,7 +485,13 @@ if report.is_ready_for_training():
 
 > `LossDiagnoser` 会自动检查：静态参数完整性、前向 NaN/Inf、反向梯度消失/爆炸、数值梯度 vs 解析梯度对比。
 
-> **C++ 内核日志级别**（可选）：可用环境变量 `SGN_LOG_LEVEL=DEBUG|INFO|WARN|ERROR` 控制 C++ 侧日志（默认 `INFO`，显示常规/警告/错误；`DEBUG` 输出详细诊断）。例如 PowerShell：`$env:SGN_LOG_LEVEL = "DEBUG"` 后再运行脚本。Python 侧的统计型日志见上方 `sgn.logger.GradLogger`，两套相互独立。
+> **C++ 内核日志**（可选）：可用环境变量 `SGN_LOG_LEVEL=DEBUG|INFO|WARN|ERROR` 控制 C++ 侧日志（默认 `INFO`，显示常规/警告/错误；`DEBUG` 输出详细诊断）。例如 PowerShell：`$env:SGN_LOG_LEVEL = "DEBUG"` 后再运行脚本。
+>
+> C++ 内核日志行带**毫秒级时间戳**与规则前缀，格式如 `[SGN] [HH:MM:SS.mmm] [LEVEL] file:line msg`。内置两条进程级 `INFO` 打点（log 输出到标准错误 stderr）：
+> - `sgn.autograd module init` —— 首次 `import sgn` 时记录模块初始化（可作进程"开始时间"）；
+> - `kernel backend selected: <name>` —— 内核能力检测完成后记录所选后端（如 `x86_avx2`）。
+>
+> 这两条默认在 `SGN_LOG_LEVEL=INFO` 下即可见；若不想看到，设 `SGN_LOG_LEVEL=WARN` 或 `ERROR` 仅保留告警/错误。Python 侧的统计型日志见上方 `sgn.logger.GradLogger`，两套相互独立。
 
 **训练中快速梯度抽检**（周期性监控梯度健康度）：
 
@@ -494,7 +536,9 @@ sgn.set_verbosity(2)  # 调试模式
 
 ## 9. Level 调度器
 
-SGN 的 Level 调度器用于**动态精度分配**——根据数据分布特征，为不同层分配不同的 bit 宽度。以下是一个完整的端到端使用示例：
+SGN 的 Level 调度器用于**动态精度分配**——根据数据分布特征，为不同层分配不同的 bit 宽度。以下是一个**端到端示例**：
+
+> **⚠️ 规划中的功能演示（重要）**：本节展示的是 Level 调度器的**目标形态与调用方式**，`allocate()` 目前可用并能返回每层位宽建议，但**把这些建议落到具体层（Linear/Conv2d）的逐层量化配置仍在开发中，尚不能直接驱动实际训练**。因此下方案例是"示意"，alloc 结果**暂不直接生效到网络训练**——请勿据此期待某层真的变成 8/6/4 位。若你需要实际控制位宽，当前可靠做法仍是切换全局 [反向传播策略](#6-反向传播策略)（如 STE/SR）。
 
 ```python
 import sgn
@@ -523,7 +567,8 @@ allocations = scheduler.allocate(activations, layer_configs)
 # allocations 是 dict，包含每层建议的 bit 宽度
 
 # 4. 在实际训练中应用分配的精度
-#    通过切换 BackwardStrategy 来使用不同的精度等级
+#    ⚠️ 以下不会真正把位宽应用到层上，仅示意映射逻辑；
+#    逐层位宽尚未直接生效（见本节开头 ⚠️ 说明）
 ag = sgn.autograd
 if allocations[0]["bits"] >= 8:
     ag.set_backward_strategy(ag.BackwardStrategy.FLOAT32)
@@ -612,9 +657,9 @@ SGN 已在支持相应指令集的 CPU 上自动启用多种底层加速，**无
 
 > 各加速项的**实测倍率、推导口径与一键复现方法**已集中收录于 [SGN 性能白皮书](SGN_性能白皮书.md)：SIMD 优化与各倍率见 §5；解码 vs memcpy 带宽与"解码有效开销 0.13×"的推导/复现口径见 §3.6。
 
-#### MSint 拆分点积新增接口（2026-08-14）
+#### MSint 拆分点积接口（当前可用）
 
-MSint 拆分点积（`dot_split` / `dot_split_leveled`）在窄路径 SIMD 之上，新增了以下可直接调用的接口（C++ 绑定 + Python fallback 双路径，未启用 C++ 扩展时自动回退、逐位一致）：
+MSint 拆分点积（`dot_split` / `dot_split_leveled`）在窄路径 SIMD 之上，当前提供以下可直接调用的接口（C++ 绑定 + Python fallback 双路径，未启用 C++ 扩展时自动回退、逐位一致）：
 
 | 接口 | 用途 |
 |------|------|
@@ -649,6 +694,13 @@ SGN 提供与 PyTorch 的对比基准，最新实测（2026-08-16，6 层 CNN fw
 > - SGN 走的是**自定义整数（MSint）表示与量化调度**——这是为探索低精度/整数网络而做的独特设计，而非与 PyTorch 在同一套数据上竞争。
 >
 > 因此"慢多少倍"反映的是**架构与数据处理路径的差异**，并不代表 SGN 处理同样的任务就一定慢这么多。SGN 的价值在于其自定义的整数表示、量化与 Level 调度能力，而非在浮点路径上追赶 PyTorch 的绝对速度。请不要据此理解为"同一任务 SGN 比 PyTorch 慢 10 倍"。完整对比表与历次复测见 [SGN 性能白皮书](SGN_性能白皮书.md) §3。
+>
+> **为什么会慢（具体可感知的开销）**：SGN 走的整数路径在多处比 PyTorch 的浮点路径多做了额外的数据变换——
+> - **MSint 位布局的解包/解码**：MSint 为了多精度拆分而采用的特殊位布局，不是内存里直接的连续整数数组；每步前向之前需把它解码/转浮点，PyTorch 则直接把浮点喂给高度优化的 MKL/BLAS，少这一步解码；
+> - **量化调度与视图解码**：每步按位宽视图（如 16/8/4 位漫游）解码、重量化后再参与计算，是一个额外的中间变换阶段；
+> - **Python ↔ 引擎桥接**：当前训练循环用 `to_numpy()`、以 numpy 数组回传梯度，存在逐轮的 numpy 桥接开销（数据来回进出引擎内存），尚未全程留在引擎内。
+>
+> **未来优化方向**：窄路径 SIMD（16/8/4 位）已经随规模增大越来越快（位平面解码从 L1 到主存的速度比提升）；把位宽调度做成**编译期静态规划**（预先算好分配、避免运行期逐层解码）、减少 Python 桥接、以及层间算子融合，是目前最被看好的缓解路径。相关调研见 [SGN 性能白皮书](SGN_性能白皮书.md)。
 
 ### 如何选择反向传播策略？
 
@@ -659,7 +711,7 @@ SGN 提供与 PyTorch 的对比基准，最新实测（2026-08-16，6 层 CNN fw
 
 ### MSint 是整数，可以直接用外部整数库吗？
 
-一个常见的误解是：「MSint 内部用的也是 int，所以可以直接调用外部的整数推理库 / 整数矩阵乘法库（无论 Google 的还是其他开源的）来加速，甚至替换 SGN 的计算」。**这个想法行不通**，原因有两点：
+一个常见的联想是：「MSint 内部用的也是 int，所以可以直接调用外部的整数推理库 / 整数矩阵乘法库（无论 Google 的还是其他开源的）来加速，甚至替换 SGN 的计算」。这个方向**可以理解，但技术上不建议这样做**，原因有两点：
 
 1. **外部整数库没有「整数反向传播」**。市面上主流的整数库（量化推理引擎、int8 矩阵库等）做的都是**前向推理**：给定权重和输入，算出输出。它们背后没有与 SGN 兼容的**整数反向传播链路**（梯度如何按整数语义回流、如何更新整数权重）。SGN 的价值是**完整训练闭环（前向 + 反向 + 更新）**，接一个只有前向的库进来，只是一块拼不上的碎片，凑不成训练。
 
@@ -741,7 +793,7 @@ for step in range(100):
 | `relu(x)` | ReLU 激活 |
 | `conv2d(x, w, b, stride, padding)` | 2D 卷积 |
 | `maxpool2d(x, kernel, stride)` | 2D 最大池化 |
-| `bn_train(x, gamma, beta, rm, rv, ...)` | BatchNorm 训练模式 |
+| `bn_train(x, gamma, beta, rm, rv, ...)` | BatchNorm **训练**模式（推理时需手动用 running 统计归一化，见 [5.1](#51-推理模式训练--评估切换)） |
 | `reshape(x, shape)` | 改变形状 |
 | `conv2d_relu(x, w, b, stride, padding)` | Conv2d+ReLU 融合 |
 
@@ -817,3 +869,29 @@ for step in range(100):
 | `LevelContext` | 精度上下文 |
 | `bits_to_max_range(bits)` | bits → 最大范围 |
 | `max_range_to_bits(max_range)` | 最大范围 → bits |
+
+### 附录：BatchNorm 推理临时处理
+
+> 背景：当前 `BatchNorm2d` 的 **eval（推理）前向尚未实现**，`model.eval()` 不会自动改用 running 统计（详见 [5.1](#51-推理模式训练--评估切换)）。推理时如需归一化，可用保存的 running 统计手动计算，代码如下：
+
+```python
+import numpy as np
+
+# bn: 你已经训练好的 BatchNorm2d 层（参数与统计量在训练后已冻结）
+# x : 输入，numpy 数组，shape (B, C, H, W)
+mu  = bn.running_mean            # (C,) 训练累积均值
+var = bn.running_var             # (C,) 训练累积方差
+g   = bn.weight                  # (C,) gamma
+btd = bn.bias                    # (C,) beta
+eps = 1e-5
+
+mu_c  = mu.reshape(1, C, 1, 1)   # 对齐 (B,C,H,W) 的通道维
+var_c = var.reshape(1, C, 1, 1)
+g_c   = g.reshape(1, C, 1, 1)
+b_c   = btd.reshape(1, C, 1, 1)
+
+x_hat = (x - mu_c) / np.sqrt(var_c + eps)   # 归一化
+y_inf = g_c * x_hat + b_c                    # 仿射 → 推理输出
+```
+
+> 说明：若你的 `bn.weight` / `bn.bias` / `running_mean` / `running_var` 是引擎 Tensor，先 `.to_numpy()` 再参与 numpy 运算。待后续版本实现 BN eval 前向后，这段可替换为一行 `model.eval()`。
