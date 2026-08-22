@@ -66,7 +66,7 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 - ✅ **算子融合**：`conv2d_relu` 将 conv2d+relu 合并为一个 tape 记录，减少内存遍历
 - ✅ **SIMD 指令集优化**：SSSE3（PABSB/PSIGNB/PALIGNR）、AES-NI（AES-CTR PRNG）、BMI1/2（BEXTR/ANDN/BZHI/PEXT）全部完成，保留 `#ifdef` 回退路径
 - ✅ **Level 调度器 C++ 迁移**：`sgn.level` 子模块（LevelContext、LevelScheduler、BitsAllocator、LevelStrategy/AdaptiveStrategy 等）全部迁移到 C++（原 Python 包已随剥离冻结至 legacy/）
-- ✅ **内存安全修复**：5 个高危 + 5 个中危 + 11 个低危全部已修复或确认为非安全问题（VNNI 缓冲区溢出、NULL 解引用、AVX2 越界写、use-after-free ×2、整数溢出、除零、边界检查、输出缓冲区大小参数、Merkle 边界检查、RS 线程安全初始化、trie 深度检查、malloc 失败清零、原子初始化等），详见 [memory-safety-audit.md](.trae/documents/memory-safety-audit.md)
+- ✅ **内存安全修复**：5 个高危 + 5 个中危 + 11 个低危全部已修复或确认为非安全问题（VNNI 缓冲区溢出、NULL 解引用、AVX2 越界写、use-after-free ×2、整数溢出、除零、边界检查、输出缓冲区大小参数、Merkle 边界检查、RS 线程安全初始化、trie 深度检查、malloc 失败清零、原子初始化等），详见 [memory-safety-audit.md]
 - ✅ **测试验证**：全量 pytest **275 功能项全通过**（2026-08-16 legacy 独立后回归 + 2026-08-16 重建 .pyd 后复测；详见 [SGN 性能白皮书](SGN_性能白皮书.md) §3.6）；原 93 个 HC C 测试（test_hpdc / test_global_bug_check / test_sgn）已随 `engine/hc/` 剥离至 `legacy/` 归档
 - ⚠️ 性能已优化：AVX2 FMA + OpenMP 已启用（含 2026-08-16 batchnorm2d 零拷贝 + 8 个 GEMM 内核 OpenMP 并行化），比 PyTorch（MKL）慢 3.3-4.8x（fwd+bwd，B=4/8/16），待 AVX-VNNI 进一步优化（性能数据详见 [SGN 性能白皮书](SGN_性能白皮书.md)）
 - ✅ **内存分配**：可插拔分配器抽象 + **通用内存池已实现**（size-class 分桶 + `thread_local` 无锁 free-list，`common/allocator.h` / `common/pool_allocator.h`）。Storage 经 `sgn_allocate_floats()` 走全局分配器（默认 64B 对齐 `aligned new`），并**在分配时捕获 deallocator** 保证 alloc/dealloc 严格配对。池化默认关闭（行为与未池化一致、数值不变），训练前调用 `sgn.set_pool_allocator(True)` 启用、`clear_pool()` 清池（实测见 [SGN 性能白皮书](SGN_性能白皮书.md) §7；设计见 [engine_infrastructure_plan_2026_08_14.md](fixes_相关修复/architecture/engine_infrastructure_plan_2026_08_14.md)）
@@ -1156,41 +1156,11 @@ Remove-Item Env:SGN_DEBUG
 
 ---
 
-## 15. 相关文档
-
-- [双模式系统设计文档](engine/sgn/fixes_相关修复/framework_dual_mode_design.md) — 完整设计决策、使用手册、Bug 修复记录
-- [UX 基础设施实现计划](.trae/documents/plan_sgn_ux_infrastructure.md) — v0.8.0 标准层/record_scope/auto_build 等实现计划
-- [设计 spec](.trae/specs/launch-cpp-autograd-framework/spec.md) — 完整设计决策（算子优先、tape-based、与 PyTorch 边界）
-- [SIMD 指令集加速 MSint/HC 核心路径 Spec](.trae/specs/ssse3-msint-accelerate/spec.md) — SSSE3/AES-NI/BMI1/2 优化规范
-- [COMPILER_TOOLCHAIN.md](COMPILER_TOOLCHAIN.md) — 编译器统一路线图
-- [test_phase5.py](engine/sgn/autograd/test_phase5.py) — 6 层 CNN 正确性验证（vs PyTorch）
-- [benchmark_phase5.py](engine/sgn/autograd/benchmark_phase5.py) — 性能基线测试
-- [benchmark_ste_fusion.py](engine/sgn/autograd/benchmark_ste_fusion.py) — STE 策略 + 融合算子性能测试
-- [test_dual_mode.py](engine/sgn/tests/architecture/test_dual_mode.py) — 双模式一致性测试
-- [test_util_diagnose.py](engine/sgn/tests/test_util_diagnose.py) — 诊断与工具测试（19 项）
-- [nn_layers.py](engine/sgn/nn_layers.py) — 标准层 Module 子类实现（v0.8.0）
-- [loss.py](engine/sgn/loss.py) — 损失函数模块（计算模式 + 诊断模式，v0.8.0）
-- [logger.py](engine/sgn/logger.py) — 梯度日志与诊断工具（v0.8.0）
-- [test_loss.py](engine/sgn/tests/test_loss.py) — 损失函数正确性测试（63 项，v0.8.0）
-- [examples/mnist_mlp.py](examples/mnist_mlp.py) — MNIST MLP 训练示例（v0.8.0）
-- [examples/cifar10_cnn.py](examples/cifar10_cnn.py) — CIFAR-10 CNN 训练示例（v0.8.0）
-- [examples/test_multi_strategy_mnist.py](examples/test_multi_strategy_mnist.py) — 多策略交叉测试（FLOAT32/GEF/SR，v0.8.0）
-- [examples/test_diagnoser_catch_bug.py](examples/test_diagnoser_catch_bug.py) — 诊断器抓 Bug 验证（v0.8.0）
-- [SIMD 优化总览](fixes_相关修复/hc_quantization/simd/simd_optimization_summary.md)
-- [MSint 多精度拆分计算范式](docs/msint_multisplit_paradigm/MSint多精度拆分计算范式.md) — 1:N 多精度解释 / Level 逐元素精度选择 / H3 带宽加速（v0.8.1）
-- [严格数学验证计划与结果](fixes_相关修复/architecture/numpy_math_verification_plan_2026_08_13.md) — #22–#28 七阶段验证全通过（v0.8.1）
-- [SIMD 优化前 baseline + 适用性分析](engine/sgn/tests/architecture/validate_bench_msint_simd_baseline.py) — 未优化标量基线 + SIMD 适用性判定（v0.8.1）。**2026-08-13 实测（C++ 模式，重建 .pyd 19:33 后最新源码，已修 Python 回退缺失 `*_default` 的 bug）**：K=16384 时异构 leveled 7.580ms vs 标量全精度 2.546ms（2.98×）；异构/标量比随 K 从 1.58×（K=256）升到 2.98×（K=16384）；同粒度 fused/split 各粒度 0.119–0.175ms；优化焦点 = dot_split 组内点积（已实施：16 位 AVX2 `mul_epi32` 8.9–9.3× / 8 位 AVX-VNNI `dpbusd` 26.9–32.3× / 4 位 nibble 预解包+`dpbusd` 72.2–95.2×，2026-08-14 生产内核复测），决策层/控制层/128 位融合不做。**2026-08-16 复测（重建 .pyd 后，见 [SGN 性能白皮书](SGN_性能白皮书.md) §3.6）**：K=16384 异构/标量降至 **1.01x**（当前 .pyd 已含窄路径 SIMD）
-- [C++ 引擎基础设施补齐计划](fixes_相关修复/architecture/engine_infrastructure_plan_2026_08_14.md) — P0 统一 logger / P1 内存池 / P2 Tape 架构改造（落地记录见 [SGN 性能白皮书](SGN_性能白皮书.md) §7 / §8）
-- [SGN 性能白皮书](SGN_性能白皮书.md) — 性能基线与优化路线图 / 性能限制（独立白皮书 §1~§8，2026-08-16 迁移）
-- [归档文档](docs/archive/)
-
----
-
 ## 16. 诊断与工具
 
 为方便日常开发和调试，`sgn` 模块内置了轻量级诊断和工具函数。
 
-### 16.1 `sgn.diagnose()` — 一键诊断
+### 15.1 `sgn.diagnose()` — 一键诊断
 
 打印版本、构建时间、编译器、CPU 特性、子模块状态。
 
@@ -1207,7 +1177,7 @@ Submodules: col2im_c ✓  hc8_net ✓  hc16 ✓  hc16ms ✓  hc4 ✓  autograd �
 
 **用途**：排查构建问题、确认编译器和 CPU 特性、快速了解模块状态。
 
-### 16.2 `sgn.test()` — 快速自检
+### 15.2 `sgn.test()` — 快速自检
 
 验证 10 项核心功能是否正常，返回 `True`/`False`。
 
@@ -1229,7 +1199,7 @@ All 10 tests passed.
 
 **检查项**：版本号、7 个子模块、AVX-VNNI 指令、基础算子。
 
-### 16.3 `sgn.util` 工具箱
+### 15.3 `sgn.util` 工具箱
 
 #### `ensure_built()` — 检查 .pyd 是否最新
 
@@ -1311,7 +1281,7 @@ Total params: 109386
 
 按层打印参数名、形状和参数量，底部汇总。
 
-### 16.4 全局 verbosity 控制（v0.8.0 新增）
+### 15.4 全局 verbosity 控制（v0.8.0 新增）
 
 ```python
 import sgn
@@ -1332,7 +1302,7 @@ sgn.set_verbosity(2)
 | normal | 1 | 默认，输出关键信息 |
 | debug | 2 | 输出详细调试信息 |
 
-### 16.5 `Module.__repr__` — 模型结构树形打印
+### 15.5 `Module.__repr__` — 模型结构树形打印
 
 `sgn.nn.Module` 子类会自动显示参数和子模块的树形结构：
 
@@ -1362,7 +1332,7 @@ CNN4(
 )
 ```
 
-### 16.6 测试脚本
+### 15.6 测试脚本
 
 完整测试脚本位于 [engine/sgn/tests/test_util_diagnose.py](engine/sgn/tests/test_util_diagnose.py)，覆盖 19 项测试：
 
@@ -1375,7 +1345,7 @@ python engine/sgn/tests/test_util_diagnose.py
 
 ---
 
-## 17. Loss 模块（v0.8.0 新增）
+## 16. Loss 模块（v0.8.0 新增）
 
 `sgn.loss` 提供可插拔的损失函数，支持**计算模式**和**诊断模式**双轨设计。
 
@@ -1386,7 +1356,7 @@ python engine/sgn/tests/test_util_diagnose.py
 - [engine/sgn/logger.py](engine/sgn/logger.py) — 梯度日志与诊断统一入口
 - [engine/sgn/tests/test_loss.py](engine/sgn/tests/test_loss.py) — 63 项测试
 
-### 17.1 计算模式（轨一）
+### 16.1 计算模式（轨一）
 
 #### 内置损失函数
 
@@ -1462,7 +1432,7 @@ class MyLoss(sgn.loss.BaseLoss):
         return np.sign(diff) / diff.size
 ```
 
-### 17.2 诊断模式（轨二）
+### 16.2 诊断模式（轨二）
 
 `LossDiagnoser` 是独立的第三方裁判，用数值梯度检验用户的解析梯度，**只报告不修复**。
 
@@ -1544,7 +1514,7 @@ results = diagnoser.run_gradient_correctness(eps=1e-2, n_samples=20)
 
 **训练中快速抽检**：`examples/mnist_mlp.py` 和 `examples/cifar10_cnn.py` 内置了 `_run_gradient_spot_check()` 函数，封装 `diagnose(modes=['gradient'])` 返回 `(median_diff, max_diff, max_param)`，用于训练中周期性监控梯度健康度，检测退化（>5× 基线时告警）。
 
-### 17.3 GradLogger 统一入口
+### 16.3 GradLogger 统一入口
 
 `GradLogger` 同时提供运行时日志和开发期诊断，通过 `sgn.logger.GradLogger` 访问。
 
@@ -1581,7 +1551,7 @@ logger.log_every = 50    # 每 50 步输出一次
 logger._call_count = 0   # 重置计数器
 ```
 
-### 17.4 与现有代码的兼容性
+### 16.4 与现有代码的兼容性
 
 - 现有手动计算模式**完全保留**，`sgn.loss` 是可选的
 - `Tensor.backward()` 接口不变，loss 模块通过它启动反向传播
