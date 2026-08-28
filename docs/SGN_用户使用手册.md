@@ -1,6 +1,7 @@
 # SGN 用户使用手册
 
 > **适用对象**: 普通用户（非开发者）—— 你不需要懂 C++、CMake 或编译器，只需会 pip install 和写 Python。
+> **版本**: v0.10.0（2026-08-29）
 > **版本策略**: 始终对应最新版本，不保留旧版历史
 > **开发者**: 如你是协作者/团队成员，请参阅 [SGN C++ Autograd 用户操作手册](SGN_Autograd_用户操作手册.md)
 
@@ -100,12 +101,16 @@ print(y.to_numpy().shape)  # (4, 10)
 
 # 3. 反向传播
 y.backward(np.ones_like(y.to_numpy()))  # grad 可以是 numpy 数组或 Tensor
+grads = {name: p.grad for name, p in model.named_parameters()}  # 从 tape 收集梯度
 
-# 4. 参数更新（真正的"训练"一步）
-opt = sgn.optim.SGD(model, lr=0.01)
-opt.step()    # 用 p.grad 更新所有参数
-opt.zero_grad()  # 清零梯度，供下一步复用
+# 4. 参数更新（真正的"训练"一步，优化器基础设施 B1，2026-08-29）
+optimizer = sgn.SGD(model, lr=0.01, momentum=0.9)   # 支持 nn.Module 或 dict[str,ndarray]
+optimizer.step(grads)   # 显式梯度更新（非 PyTorch 无参 step）
 ```
+> 优化器：`sgn.SGD(params, lr, momentum, weight_decay, classical)` / `sgn.Adam(...)`；
+> `step(grads)` 显式传入 {name: ndarray}（本项目 tape 每步重建 Tensor，梯度由调用方收集）。
+> 检查点：`sgn.save_checkpoint / load_checkpoint` 保存完整训练状态（参数+优化器+step+随机源），
+> 断点续训逐位可复现。
 
 > **注意**：`model([x])` 使用方括号将输入包装为列表。这是因为 SGN 的 Module 支持多输入（如 Siamese 网络），即使单输入也需包装成列表。这与 PyTorch 的 `model(x)` 不同，请留意。
 >
@@ -324,7 +329,7 @@ h.backward()
 
 ## 5. 训练循环
 
-SGN 自带 `sgn.optim.SGD` 优化器，无需依赖 PyTorch 或其他框架：
+SGN 自带 `sgn.SGD` 优化器（基础设施 B1，2026-08-29），无需依赖 PyTorch 或其他框架：
 
 ```python
 import sgn
@@ -338,8 +343,8 @@ model = nn.Sequential(
 )
 model.train()
 
-# 创建优化器
-optimizer = sgn.optim.SGD(model, lr=0.01)
+# 创建优化器（支持 nn.Module 或 dict[str,ndarray]）
+optimizer = sgn.SGD(model, lr=0.01, momentum=0.9)
 
 for step in range(num_steps):
     # 1. 准备数据
@@ -356,23 +361,15 @@ for step in range(num_steps):
     # 4. 反向传播
     y_pred.backward(loss_grad)
 
-    # 5. 优化器更新参数（一行完成）
-    optimizer.step()
-
-    # 6. 清零梯度
-    optimizer.zero_grad()
+    # 5. 从 tape 收集梯度并更新参数（一行完成）
+    grads = {name: p.grad for name, p in model.named_parameters()}
+    optimizer.step(grads)
 ```
 
-`optimizer.step()` 内部等价于：
-
-```python
-state = model.state_dict()
-for name, p in model.named_parameters():
-    g = p.grad
-    if g is not None:
-        state[name] = state[name] - lr * g
-model.load_state_dict(state)
-```
+`optimizer.step(grads)` 用 `{name: ndarray}` 显式更新对应参数（SGD 支持经典速度式
+`v=m·v-lr·g; p+=v`（`classical=True`，复现训练脚本手写循环）与默认 PyTorch 式 `p-=lr·v`；
+Adam 见 `sgn.Adam`）。tape 生命周期由 `record_scope` 管理（自动 clear+start+stop），
+**无需手动 zero_grad**。
 
 ### 5.1 推理模式（训练 / 评估切换）
 
@@ -448,6 +445,12 @@ model.load_state_dict(state)
 # 加载后做推理前，务必切换到推理模式（详见 5.1）
 model.eval()   # （若模型含 BatchNorm：当前 eval 前向尚未实现，还需按 5.1 的临时用法手动处理 running 统计）
 ```
+
+> **完整训练检查点（基础设施 B2，2026-08-29）**：模型权重保存用 `state_dict/np.savez` 即可；
+> 但**训练中断续跑**（长验证实验）需同时保存优化器状态与随机源，用
+> `sgn.save_checkpoint(path, params=..., optimizer=opt, step=t, seed=s, rngs={...})` /
+> `sgn.load_checkpoint(path)`——断点续训与不间断训练逐位一致（含 rng 恢复），
+> 替代手写 np.savez。
 
 ---
 
@@ -746,7 +749,7 @@ print(model)
 
 # 创建损失函数和优化器
 criterion = sgn.loss.MSELoss()
-optimizer = sgn.optim.SGD(model, lr=0.01)
+optimizer = sgn.SGD(model, lr=0.01, momentum=0.9)
 
 # 训练循环
 for step in range(100):
@@ -759,8 +762,8 @@ for step in range(100):
     # 使用内置损失函数，一行完成 loss 和梯度计算
     loss, dY = criterion(y_pred.to_numpy(), y)
     y_pred.backward(dY.astype(np.float32))
-    optimizer.step()       # 一行完成参数更新
-    optimizer.zero_grad()  # 清零梯度
+    grads = {name: p.grad for name, p in model.named_parameters()}
+    optimizer.step(grads)      # 一行完成参数更新（tape 由 record_scope 管理，无需 zero_grad）
 ```
 
 > 更多示例见 [examples/mnist_mlp.py](examples/mnist_mlp.py) 和 [examples/cifar10_cnn.py](examples/cifar10_cnn.py)。
@@ -814,13 +817,14 @@ for step in range(100):
 | `uniform_(t, low, high)` | 均匀初始化 |
 | `fill_(t, value)` | 常量填充 |
 
-### `sgn.optim`
+### `sgn` 优化器（基础设施 B1，2026-08-29）
 
 | API | 说明 |
 |-----|------|
-| `SGD(model, lr=0.01)` | 随机梯度下降优化器 |
-| `optimizer.step()` | 执行一步参数更新 |
-| `optimizer.zero_grad()` | 清零梯度 |
+| `SGD(params, lr, momentum, classical)` | 随机梯度下降优化器（params=nn.Module 或 dict[str,ndarray]） |
+| `Adam(params, lr, betas, eps)` | Adam 优化器 |
+| `optimizer.step(grads)` | 用 {name: ndarray} 显式更新参数（梯度从 tape 的 p.grad 收集） |
+| `save_checkpoint / load_checkpoint` | 完整训练状态保存/恢复（参数+优化器+step+随机源） |
 
 ### `sgn.util`
 
