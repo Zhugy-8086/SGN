@@ -22,8 +22,39 @@
 
 #include <cstdlib>
 #include <cstring>
+// CPUID 检测用内联 intrinsic（跨平台）：
+//   - Windows/MSVC target: <intrin.h> 提供 __cpuid/__cpuidex/_xgetbv
+//   - Linux (GCC/Clang):    <cpuid.h> 提供 __get_cpuid/__get_cpuid_count；
+//                           _xgetbv 在 <immintrin.h>（-mavx 下可用）。
+// 置于全局命名空间：这些 intrinsic 是编译器内建，在匿名 namespace 内声明可能影响解析。
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <cpuid.h>
+#include <immintrin.h>  // _xgetbv（需 -mavx 或更高）
+#endif
+#endif
 
 namespace sgn::simd {
+namespace {
+
+// 跨平台读取环境变量（避免 MSVC 对 getenv 的弃用警告；与 common/logger.h 的
+// sgn_getenv 同模式）：MSVC 下用 C11 getenv_s，其余平台用 std::getenv。
+// 仅进程启动早期读取一次（magic static 求值时），返回指针生命周期足够。
+inline const char* simd_getenv(const char* name) {
+#if defined(_MSC_VER)
+    static thread_local char buf[64];
+    size_t len = 0;
+    if (getenv_s(&len, buf, sizeof(buf), name) != 0) {
+        return nullptr;
+    }
+    return (len == 0) ? nullptr : buf;
+#else
+    return std::getenv(name);
+#endif
+}
+}  // namespace
 
 // ============================================================================
 // 内部实现前向声明（定义在 scalar.cpp / x86/*.cpp）
@@ -59,18 +90,84 @@ void reverse_bytes8_ssse3(uint64_t, int, int64_t*);
 void batch_reverse_u8_ssse3(const uint64_t*, int, int, int64_t*);
 #endif
 
+// AVX-512 实现（服务器加速，P1；见 simd服务器加速计划_2026_08_30.md）。
+// 无条件声明：avx512.cpp / avx512vnni.cpp 由 CMake 单独加 -mavx512f -mavx512vnni
+// -mavx512bw（文件级选项），符号常驻产出；本文件基础编译，仅经 CPUID 运行时选入。
+// decode_i16_f32 无 512 位版（带宽型，512 位打包收益有限）→ 落到 AVX2 版。
+int64_t dot16_avx512(const int16_t*, const int16_t*, size_t);
+int64_t dot8_avx512vnni(const uint8_t*, const int8_t*, size_t);
+int64_t dot4_avx512vnni(const uint8_t*, const int8_t*, size_t);
+float sum_f32_avx512(const float*, int64_t, int64_t);
+float sum_sq_dev_f32_avx512(const float*, int64_t, int64_t, float);
+void sum_sumprod_f32_avx512(const float*, const float*, int64_t, int64_t, float*, float*);
+void accum_f32_avx512(float*, const float*, int64_t);
+
 namespace {
 
 // CPU 能力快照（一次性填充；编译期宏优先，未以 SIMD 编译时运行时 CPUID 检测——仅 x86）。
 // 与 dispatch/registry.cpp 的 CpuCaps 同构，但只关注 simd 原语层依赖的指令集。
+// AVX-512 字段恒走运行时检测（本文件基础编译无 __AVX512F__ 宏；avx512 符号常驻）。
 struct CpuCaps {
-    bool avx2;     // 覆盖 dot16 / decode / sum 系
-    bool avx_vnni; // 覆盖 dot8 / dot4
-    bool ssse3;    // 覆盖 reverse / batch
+    bool avx2;        // 覆盖 dot16 / decode / sum 系
+    bool avx_vnni;    // 覆盖 dot8 / dot4
+    bool ssse3;       // 覆盖 reverse / batch
+    bool avx512f;     // 覆盖 dot16 / sum 系（512 位版）
+    bool avx512_vnni; // 覆盖 dot8 / dot4（512 位 VNNI 版）
+    bool avx512_bw;   // dot16 的 _mm512_mul_epi32 / 字节指令需 AVX512BW
 };
 
+#if defined(__x86_64__) || defined(_M_X64)
+// CPUID 运行时检测。不用 __builtin_cpu_supports——其依赖 __cpu_model 运行时符号，
+// -nostdlib 链接的 .pyd 无法解析（同 pysgn_net.cpp 的 _cpu_has_avx2 结论）。
+// 跨平台：Windows 用 <intrin.h> 的 __cpuid/__cpuidex/_xgetbv；
+//          Linux 用 <cpuid.h> 的 __get_cpuid/__get_cpuid_count（_xgetbv 同 intrinsic）。
+// 位定义：leaf1 ECX: SSSE3=9, AVX=28, XSAVE=27；leaf7 EBX: AVX2=5, AVX512F=16, AVX512BW=30；
+//         leaf7 subleaf1 ECX: AVX512VNNI=11；XCR0: XMM=1, YMM=2, opmask=4, ZMM hi=8。
+static void cpuid_leaf(int leaf, int* r) {
+#if defined(_MSC_VER)
+    __cpuid(r, leaf);
+#else
+    __cpuid_count(leaf, 0, r[0], r[1], r[2], r[3]);
+#endif
+}
+static void cpuid_subleaf(int leaf, int subleaf, int* r) {
+#if defined(_MSC_VER)
+    __cpuidex(r, leaf, subleaf);
+#else
+    __cpuid_count(leaf, subleaf, r[0], r[1], r[2], r[3]);
+#endif
+}
+static CpuCaps cpu_caps_x86() {
+    CpuCaps c = {false, false, false, false, false, false};
+    int r[4];
+    cpuid_leaf(1, r);
+    const bool os_xsave = (r[2] & (1 << 27)) != 0;
+    const bool cpu_avx  = (r[2] & (1 << 28)) != 0;
+    c.ssse3 = (r[2] & (1 << 9)) != 0;
+    if (os_xsave && cpu_avx && (_xgetbv(0) & 0x6) == 0x6) {
+        // XMM+YMM 状态已由 OS 使能（AVX/AVX2 前提）
+        cpuid_leaf(7, r);
+        c.avx2      = (r[1] & (1 << 5)) != 0;
+        c.avx512f   = (r[1] & (1 << 16)) != 0;
+        c.avx512_bw = (r[1] & (1 << 30)) != 0;
+        // AVX-512 还需 opmask + ZMM hi256 状态（XCR0 0xE6）
+        if (c.avx512f && (_xgetbv(0) & 0xE6) != 0xE6) {
+            c.avx512f = c.avx512_bw = false;
+        }
+        // AVX-VNNI（256 位 VNNI）：leaf7 subleaf0 ECX bit4
+        c.avx_vnni = (r[2] & (1 << 4)) != 0;
+        // AVX512-VNNI：leaf7 subleaf1 ECX bit11
+        if (c.avx512f) {
+            cpuid_subleaf(7, 1, r);
+            c.avx512_vnni = (r[2] & (1 << 11)) != 0;
+        }
+    }
+    return c;
+}
+#endif
+
 CpuCaps cpu_caps() {
-    CpuCaps caps = {false, false, false};
+    CpuCaps caps = {false, false, false, false, false, false};
 #if defined(__AVX2__)
     caps.avx2 = true;
 #endif
@@ -80,10 +177,16 @@ CpuCaps cpu_caps() {
 #if defined(__SSSE3__)
     caps.ssse3 = true;
 #endif
-#if !defined(__AVX2__) && (defined(__x86_64__) || defined(_M_X64))
-    if (__builtin_cpu_supports("avx2")) caps.avx2 = true;
-    if (__builtin_cpu_supports("avxvnni")) caps.avx_vnni = true;
-    if (__builtin_cpu_supports("ssse3")) caps.ssse3 = true;
+// AVX-512：无条件运行时检测（x86）——即使全局 -mavx2 编译下宏已定义 avx2，
+// avx512 也只能经 CPUID 判定（本文件不随 avx512 文件加编译选项）。
+#if defined(__x86_64__) || defined(_M_X64)
+    const CpuCaps rt = cpu_caps_x86();
+    caps.avx2        = caps.avx2        || rt.avx2;
+    caps.avx_vnni    = caps.avx_vnni    || rt.avx_vnni;
+    caps.ssse3       = caps.ssse3       || rt.ssse3;
+    caps.avx512f     = rt.avx512f;
+    caps.avx512_bw   = rt.avx512_bw;
+    caps.avx512_vnni = rt.avx512_vnni;
 #endif
     return caps;
 }
@@ -95,12 +198,7 @@ const SimdBackend& simd_backend() noexcept {
     static const SimdBackend s = [] {
         // 环境变量强制后端（测试钩子，不做运行期热切换；与 dispatch/registry 一致）。
         // 仅支持强制 scalar（sse2 同样落到标量原语）。
-        static char forced_buf[32] = {0};
-        size_t required = 0;
-        getenv_s(&required, forced_buf, sizeof(forced_buf), "SGN_KERNEL_BACKEND");
-        const char* forced = (required > 0 && required <= sizeof(forced_buf))
-                                 ? forced_buf
-                                 : nullptr;
+        const char* forced = simd_getenv("SGN_KERNEL_BACKEND");
 
         SimdBackend b;
         if (forced && (std::strcmp(forced, "scalar") == 0 ||
@@ -155,9 +253,25 @@ const SimdBackend& simd_backend() noexcept {
             b.batch_reverse_u8 = batch_reverse_u8_ssse3;
         }
 #endif
+        // AVX-512（P1 服务器加速）：优先于 AVX-VNNI/AVX2 覆盖 compute-bound 原语。
+        // decode_i16_f32 无 512 位版，保持 AVX2；reverse/batch 无 512 位版，保持 SSSE3。
+        // 运行时 CPUID 检测（本文件基础编译，avx512 符号常驻由 CMake 文件级选项产出）。
+        if (caps.avx512_vnni && caps.avx512_bw) {
+            b.dot8 = dot8_avx512vnni;
+            b.dot4 = dot4_avx512vnni;
+        }
+        if (caps.avx512f && caps.avx512_bw) {
+            b.dot16           = dot16_avx512;
+            b.sum_f32         = sum_f32_avx512;
+            b.sum_sq_dev_f32  = sum_sq_dev_f32_avx512;
+            b.sum_sumprod_f32 = sum_sumprod_f32_avx512;
+            b.accum_f32       = accum_f32_avx512;
+        }
 
         // 整体后端名 = 最高可用指令集（诊断用）
-        if (caps.avx_vnni)   b.name = "avxvnni";
+        if (caps.avx512_vnni) b.name = "avx512vnni";
+        else if (caps.avx512f) b.name = "avx512f";
+        else if (caps.avx_vnni) b.name = "avxvnni";
         else if (caps.avx2)  b.name = "avx2";
         else if (caps.ssse3) b.name = "ssse3";
         else                 b.name = "scalar";

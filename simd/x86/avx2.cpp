@@ -43,13 +43,52 @@ inline __m256i dot16_body(__m256i acc, const int16_t* a, const int16_t* b) {
                                                  _mm256_srli_epi64(vb_hi, 32)));
     return acc;
 }
+
+// madd 快速路径（2026-08-31 数据实验定案，见 simd服务器加速计划 §7）：
+// 用 _mm256_madd_epi16（1 指令/16 元素，相邻两对乘积相加为 int32）替代 vpmuldq。
+// 溢出边界（实验确认）：仅当批内存在 -32768（int16 唯一满幅值）时，同一对两乘积
+// 可能同号达 ±2³⁰ 使 pair 和越界 int32；若批内无 -32768，则 pair 和 ≤ 2×2³⁰ < 2³¹，
+// 永不溢出。故本函数先检测 a、b 两侧是否含 -32768：
+//   - 无 → madd 全速（1 指令/16 元素，理论 ~3-5× vpmuldq）
+//   - 有 → 该批回退 vpmuldq（dot16_body，保持 bit-exact）
+// 整数加法可交换/结合：混用 madd（int32 中间，立即扩 int64）与 vpmuldq（直接 int64）
+// 不改变最终逐位结果（只要 madd 中间不溢出——检测保证）。返回 int64 累加结果。
+inline __m256i dot16_madd16(__m256i acc64, const int16_t* a, const int16_t* b) {
+    __m256i va = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(a));
+    __m256i vb = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(b));
+    // 检测两侧是否含 -32768（int16 位模式 0x8000）
+    const __m256i kMin = _mm256_set1_epi16(static_cast<int16_t>(-32768));
+    __m256i m = _mm256_or_si256(_mm256_cmpeq_epi16(va, kMin),
+                                _mm256_cmpeq_epi16(vb, kMin));
+    // movemask 归约：非零 → 存在 -32768 → 回退 vpmuldq
+    if (_mm256_movemask_epi8(m) != 0) {
+        return dot16_body(acc64, a, b);
+    }
+    // madd：8×int32（相邻对乘积和，检测保证不溢出）→ 符号扩展为 8×int64 → 累加
+    __m256i m32 = _mm256_madd_epi16(va, vb);
+    __m256i lo64 = _mm256_cvtepi32_epi64(_mm256_castsi256_si128(m32));
+    __m256i hi64 = _mm256_cvtepi32_epi64(_mm256_extracti128_si256(m32, 1));
+    return _mm256_add_epi64(acc64, _mm256_add_epi64(lo64, hi64));
+}
 } // namespace
 
 int64_t dot16_avx2(const int16_t* a, const int16_t* b, size_t K) {
-    __m256i acc = _mm256_setzero_si256();
+    // madd 快速路径（2026-08-31 数据实验定案）：安全批 madd 全速 + 危险批 vpmuldq
+    // 回退；4 累加器展开。整数加法可交换/结合，与标量锚点 bit-exact 一致。
+    __m256i acc0 = _mm256_setzero_si256();
+    __m256i acc1 = _mm256_setzero_si256();
+    __m256i acc2 = _mm256_setzero_si256();
+    __m256i acc3 = _mm256_setzero_si256();
     size_t i = 0;
+    for (; i + 64 <= K; i += 64) {
+        acc0 = dot16_madd16(acc0, a + i,       b + i);
+        acc1 = dot16_madd16(acc1, a + i + 16,  b + i + 16);
+        acc2 = dot16_madd16(acc2, a + i + 32,  b + i + 32);
+        acc3 = dot16_madd16(acc3, a + i + 48,  b + i + 48);
+    }
+    // 剩余 16 的整数倍：单累加器
     for (; i + 16 <= K; i += 16) {
-        acc = dot16_body(acc, a + i, b + i);
+        acc0 = dot16_madd16(acc0, a + i, b + i);
     }
     if (i < K) {
         // K 尾部不足 16：零填充做一次 16 宽 SIMD（bit-exact——填充 0 的乘积为 0，
@@ -58,8 +97,11 @@ int64_t dot16_avx2(const int16_t* a, const int16_t* b, size_t K) {
         const size_t t = K - i;
         std::memcpy(pa, a + i, t * sizeof(int16_t));
         std::memcpy(pb, b + i, t * sizeof(int16_t));
-        acc = dot16_body(acc, pa, pb);
+        acc0 = dot16_madd16(acc0, pa, pb);
     }
+    // 合并 4 累加器（整数加法可结合，顺序无关 → bit-exact）
+    __m256i acc = _mm256_add_epi64(_mm256_add_epi64(acc0, acc1),
+                                   _mm256_add_epi64(acc2, acc3));
     int64_t v[4];
     _mm256_storeu_si256(reinterpret_cast<__m256i*>(v), acc);
     return v[0] + v[1] + v[2] + v[3];

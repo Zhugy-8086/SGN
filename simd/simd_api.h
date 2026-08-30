@@ -31,8 +31,10 @@ namespace sgn::simd {
 // ---- 整型点积原语（源：msint/split_dot.cpp；Step 1 迁移）----
 
 // int16[K] × int16[K] → int64 精确点积。
-//   AVX2 实现（simd/x86/avx2.cpp）：cvtepi16_epi32 符号扩展 + vpmuldq 分偶/奇 lane
-//   （禁 madd_epi16：相邻元素均 -32768 时 pair 和 2^31 恰好溢出 int32，破坏 bit-exact）。
+//   AVX2/AVX-512 实现（simd/x86/avx2.cpp / avx512.cpp）：madd 快速路径 + vpmuldq 回退
+//   （2026-08-31 数据实验定案，见 simd服务器加速计划 §7/§8）——批内检测 -32768，
+//   无则 _mm256/_mm512_madd_epi16 全速（相邻对乘积和，无 -32768 时 pair 和 < 2^31 不溢出），
+//   有则该批回退 vpmuldq 精确累加（保持 bit-exact）。
 //   bit-exact：整数加法可交换/结合，累加顺序不影响结果。
 int64_t dot16(const int16_t* a, const int16_t* b, size_t K);
 
@@ -104,6 +106,25 @@ void accum_f32(float* dst, const float* src, int64_t n);
 //   - 运行时：一次性 CPU 检测选后端，SGN_KERNEL_BACKEND=scalar 环境变量可强制回退标量。
 // 注意：当前构建仍全局 -mavx2 -mavxvnni（binary 硬性要求 AVX2，见拆分计划 D2）；
 // 摘除全局标志的真·无 AVX2 二进制需全部 intrinsic target 化，属后续独立改造。
+//
+// AVX-512（服务器加速，见 simd服务器加速计划_2026_08_30.md P1）：
+//   avx512.cpp / avx512vnni.cpp 由 CMake 单独加 -mavx512f -mavx512vnni -mavx512bw
+//   （set_source_files_properties，文件级选项），故符号常驻编译、可被本文件无条件声明；
+//   运行时经 __builtin_cpu_supports("avx512*") 检测，本机（无 AVX-512）自动落低档实现。
+//   多累加器展开保持整数加法可交换/结合，bit-exact 不破坏。
+
+// ---- AVX-512 实现声明（定义见 simd/x86/avx512.cpp / avx512vnni.cpp）----
+// 命名约定：_avx512 / _avx512vnni 后缀，与 _avx2/_vnni/_ssse3/_scalar 平级。
+// 仅在目标 CPU 支持 AVX-512 时被 simd_dispatch.cpp 选入；本机编译仅保证符号存在。
+int64_t dot16_avx512(const int16_t* a, const int16_t* b, size_t K);
+int64_t dot8_avx512vnni(const uint8_t* a, const int8_t* b, size_t K);
+int64_t dot4_avx512vnni(const uint8_t* u8, const int8_t* s8, size_t K);
+void decode_i16_f32_avx512(const uint64_t* pv_ptr, int n_values, float scale, float* res_ptr);
+float sum_f32_avx512(const float* p, int64_t n, int64_t stride);
+float sum_sq_dev_f32_avx512(const float* p, int64_t n, int64_t stride, float mu);
+void sum_sumprod_f32_avx512(const float* a, const float* b, int64_t n, int64_t stride,
+                            float* out_sum, float* out_sumprod);
+void accum_f32_avx512(float* dst, const float* src, int64_t n);
 
 // 当前进程活跃的 simd 后端（只读，进程生命周期内不变；magic static 单次求值）。
 struct SimdBackend {
@@ -117,12 +138,12 @@ struct SimdBackend {
     float (*sum_sq_dev_f32)(const float*, int64_t, int64_t, float);
     void (*sum_sumprod_f32)(const float*, const float*, int64_t, int64_t, float*, float*);
     void (*accum_f32)(float*, const float*, int64_t);
-    const char* name;   // 整体后端名（诊断）："avxvnni" / "avx2" / "ssse3" / "scalar"(forced)
+    const char* name;   // 整体后端名（诊断）："avx512vnni" / "avxvnni" / "avx2" / "ssse3" / "scalar"(forced)
 };
 
 const SimdBackend& simd_backend() noexcept;
 
-// 返回当前活跃后端名（等价 simd_backend().name）："avxvnni" / "avx2" / "ssse3" / "scalar"。
+// 返回当前活跃后端名（等价 simd_backend().name）："avx512vnni" / "avxvnni" / "avx2" / "ssse3" / "scalar"。
 const char* active_backend_name() noexcept;
 
 } // namespace sgn::simd
