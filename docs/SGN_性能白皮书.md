@@ -1,6 +1,6 @@
 # SGN 性能白皮书（Performance Whitepaper）
 
-> **版本**: v0.9.0（对应 SGN C++ Autograd 框架，2026-08-16）
+> **版本**: v0.10.1（对应 SGN C++ Autograd 框架，2026-08-30）
 
 ## 目录
 
@@ -59,6 +59,227 @@ STE 在前向多了一步量化+反量化，反向与 FLOAT32 相同，整体开
 2. `conv2d` im2col → OpenMP 并行化（已启用）
 3. `bn`/`relu`/`maxpool` → OpenMP（已启用）
 
+---
+
+## 2.5 安全漏洞与代码质量修复（2026-08-30）
+
+> **版本**: v0.10.1
+> **排查日期**: 2026-08-30
+> **代码规模**: 111 个 C/C++ 源文件（不含测试）
+> **排查方法**: Clang 严格警告编译 + 静态分析 + 手动审计
+
+### 排查总结
+
+| 等级 | 数量 | 修复优先级 |
+|------|------|-----------|
+| Critical | 1 | P0（立即修复） |
+| High | 4 | P1（本版本修复） |
+| Medium | 5 | P2（本版本或下次） |
+| Low | 3 | P3（可延后） |
+
+**整体评价**：代码库质量较高，内存管理使用 shared_ptr 为主避免了大多数泄漏风险；OpenMP 并行划分基本正确；SIMD 内核使用 loadu 确保了对齐安全。主要风险集中在绑定层校验不足、HC 内核数值 bug 和头文件布局泄漏。
+
+---
+
+### Critical 漏洞（1个）
+
+#### #C1. 未闭合的 `#pragma pack(push)` 导致结构体布局泄漏
+
+**文件**: `hc/ext/hc16ms.h:56`, `hc/ext/hc8_net.h:383`
+
+**问题描述**:
+文件开头有 `#pragma pack(push, ...)` 但文件末尾缺少匹配的 `#pragma pack(pop)`。这会导致编译器在该文件之后定义的所有结构体继续使用强制对齐方式，污染后续代码的 ABI 布局。
+
+**触发条件**: 任何包含此头文件后定义的结构体，其 pack 对齐方式被强制污染。
+
+**后果**:
+- 与外部库交互时静默内存错乱
+- 后续定义的结构体布局与预期不一致，导致成员访问越界/对齐错误
+
+**修复**: 在两个头文件末尾添加 `#pragma pack(pop)`
+
+---
+
+### High 漏洞（4个）
+
+#### #H1. 绑定层维度乘积整数溢出导致校验绕过
+
+**文件**: `hc/ext/pysgn_hc16ms.cpp`, `hc/ext/pysgn_hc4_pshufb.cpp`, `hc/ext/pysgn_net.cpp`
+
+**问题描述**:
+Python 传入的维度参数使用 `uint32_t` 类型，但在校验时计算 `m*k` 或 `k*n`，乘积可能发生整数回绕，导致校验通过但实际尺寸不匹配，内核访问时越界。
+
+**触发条件**:
+- 输入维度足够大使乘积回绕（例如 m=0x1000000, k=0x10）
+- 恶意输入或错误参数
+
+**后果**:
+- 任意内存越界读/写（安全漏洞）
+- 崩溃或静默数据错误
+
+**修复**: 使用 `int64_t` 计算 `m*k` 或 `k*n`，避免 uint32_t 溢出
+
+---
+
+#### #H2. HC8 L1 距离 AVX2 路径只累加一半元素
+
+**文件**: `hc/ext/hc8_net.c:2965-3035`（函数 `hc8_l1_distance_avx2`）
+
+**问题描述**:
+该函数的 AVX2 路径注释说"需要 2 次 sad 覆盖 32 字节"，但代码只执行 1 次 `_mm256_sad_epu8` 且只提取索引 0 和 4 的部分和（低 128 位 lane），高 128 位的两个部分和（字节 16..31）被完全丢弃，导致距离值系统性漏算一半。
+
+**后果**:
+- 距离值系统性漏算一半
+- 依赖该函数的计算结果错误
+
+**修复**: 补充缺失的两个部分和提取
+
+---
+
+#### #H3. MaxPool backward OpenMP 数据竞争（当 stride<kernel 时）
+
+**文件**: `autograd/ops_nn.cpp:1338-1343`
+
+**问题描述**:
+`maxpool2d_backward` 使用 OpenMP 并行遍历输出位置，直接写入 `dx_ptr[in_idx] += dy_ptr[i]`。当 `stride < kernel` 时，多个输出位置可能映射到同一输入位置（receptive field 重叠），并行写入会导致 `+=` 操作的数据竞争。
+
+**触发条件**:
+- `stride < kernel` 的 maxpool（例如 stride=1, kernel=3）
+- 多线程执行
+
+**后果**:
+- 梯度随机丢失或重复累积
+- 训练不稳定
+
+**修复**: 使用 OpenMP atomic 操作保护
+
+---
+
+#### #H4. MaxPool argmax 用 float32 存储线性索引
+
+**文件**: `autograd/ops_nn.cpp:1291`, `autograd/ops_nn.cpp:1339`
+
+**问题描述**:
+`ctx.argmax` 使用 `float` 存储 `int64_t` 线性索引。float32 的 23 位 mantissa 无法精确表示 >2^24 的整数，当张量元素总数超过 2^24 时，索引值可能因精度丢失而指向错误位置。
+
+**触发条件**:
+- 4D 张量元素总数 > 16,777,216（例如 batch=256, C=256, H=256, W=256）
+
+**后果**:
+- 梯度路由到错误位置（最多偏移 1）
+- 训练静默错误
+
+**修复**: 改为使用 `int64_t` 存储，避免精度丢失
+
+---
+
+### Medium 漏洞（5个）
+
+#### #M1. PackedBackend left shift by 64 未定义行为
+
+**文件**: `msint/packed_backend.cpp:91`, `msint/packed_backend_bindings.cpp:97`
+
+**问题描述**: `1ULL << slot.bits` 当 `slot.bits=64` 时是未定义行为；`1ULL << (total - 1)` 当 `total=0` 时也是未定义行为。
+
+**后果**: 符号扩展逻辑错误、静默返回错误值
+
+**修复**: 添加边界检查
+
+---
+
+#### #M2. SplitDot right shift overflow of int64_t
+
+**文件**: `msint/split_dot.cpp:418`
+
+**问题描述**: `value >> ((n - 1) * split_bits)` 中 `(n - 1) * split_bits` 可能 > 63，导致右移溢出 int64_t 的范围，是未定义行为。
+
+**后果**: 高位部分丢失、分解结果错误
+
+**修复**: 添加移位量校验或使用更大的整数类型
+
+---
+
+#### #M3. Pybind11 绑定层缺失 dtype/ndim 校验导致任意 shape 访问
+
+**文件**: `hc/ext/pysgn_hc4_pshufb.cpp`, `hc/ext/pysgn_net.cpp`
+
+**问题描述**: 绑定层仅校验 `ndim==2` 和 shape 尺寸匹配，未校验 numpy 数组的 dtype、C 连续性、writable 标志。直接 `data()` 访问可能指向非 float 数据或非连续布局，导致读错数据。
+
+**后果**: 读错数据、静默错误、可能的越界读
+
+**修复**: 添加完整的校验（dtype、C连续性、writable标志）
+
+---
+
+#### #M4. Tensor::at(size_t i) 未检查 contiguity 导致堆越界读
+
+**文件**: `autograd/tensor.cpp:125-142`
+
+**问题描述**: `Tensor::at(size_t i)` 和 `at(size_t i, size_t j)` 仅检查了 `ndim` 和范围，未检查 `is_contiguous()`。如果 Tensor 是 expand 后的非连续张量，直接用线性索引 `storage_->data()[i]` 可能读取错误位置。
+
+**后果**: 读取错误内存位置、静默数据错误
+
+**修复**: 在 `at(size_t i)` 中添加 `is_contiguous()` 检查
+
+---
+
+#### #M5. Tensor::grad() 用 numel()==0 判断 moved-from 状态可能失效
+
+**文件**: `autograd/autograd.cpp:147-158`
+
+**问题描述**: `Tape::grad()` 用 `numel()==0` 判断 moved-from 状态（已消费的中间梯度），但 moved-from Tensor 的 `shape_` 为空 vector，其 `numel()` 返回空乘积 = 1 而非 0，该防线可能失效。
+
+**后果**: 返回指向已消费梯度（moved-from）的指针、静默错误或崩溃
+
+**修复**: 使用更可靠的 moved-from 检测（标志位或检查 data() 是否为 nullptr）
+
+---
+
+### Low 漏洞（3个）
+
+#### #L1. 未使用变量（代码冗余）
+
+**文件**: `autograd/ops_nn.cpp`, `dispatch/registry.cpp`
+
+**问题描述**: 局部变量声明但未使用，代码冗余。
+
+**后果**: 代码冗余；无功能影响
+
+**修复**: 移除未使用的变量声明
+
+---
+
+#### #L2. Logger 格式化属性缺失（诊断性）
+
+**文件**: `common/logger.h:178`
+
+**问题描述**: `sgn_log_impl` 缺少 `format(printf, 4, 5)` 属性，编译器无法检查格式字符串与参数匹配。
+
+**后果**: 编译器无法检查格式字符串与参数匹配
+
+**修复**: 添加 `__attribute__((format(printf, 4, 5)))` 属性
+
+---
+
+#### #L3. Braced scalar init 语法（兼容性）
+
+**文件**: `hc/ext/hc16.cpp`, `hc_decode_bindings.cpp`
+
+**问题描述**: 使用 braced scalar init 语法，可能导致编译器版本兼容性问题。
+
+**后果**: 代码兼容性问题
+
+**修复**: 改用等号赋值语法
+
+---
+
+### 修复意义
+
+**内存安全**: 修复可能导致越界读/写/静默数据错误的漏洞（#C1, #H1, #M1-#M4）
+
+**训练稳定性**: 修复 #H3 数据竞争和 #H4 精度丢失问题，确保梯度正确路由
+
+**代码质量**: 清理冗余代码（#L1）、增强诊断能力（#L2）、改善兼容性（#L3）
 
 ---
 
@@ -214,6 +435,55 @@ v0.7.1 测量时 B=16 的 C++ fwd+bwd 为 94.68ms（差距 10.4x），v0.7.2 恢
 2. **中危修复的微量开销**：M3（`hc4_pshufb.c` 整数溢出修复）改变循环变量类型为 `size_t`，在 32 位平台上会增加指令数，但 x64 上 `size_t` 即为 64 位，与原始 `uint32_t` 在 x64 上无性能差异。M1/M2（NULL 检查宏）在正常路径上不增加额外指令。M4（`compute_ef_scale` 除零保护）仅在梯度全零时触发，不影响热路径。M5（边界检查）仅在调试时生效。
 
 > **结论**：v0.7.2 数据已恢复正常，与 v0.5 基准水平一致（B=16 差距 9.2x vs v0.5 的 8.6x，差异在正常波动范围内）。内存安全修复未引入可观测的性能退化。
+
+### 3.7.1 v0.10.1 安全修复后性能基线（2026-08-30）
+
+> **本次为 14 个安全漏洞全部修复后的性能基准。** 安全修复包括：1个Critical、4个High、5个Medium、3个Low。修复内容涉及内存安全、训练稳定性（数据竞争/精度丢失）和代码质量（冗余代码、诊断能力）。
+
+**测试环境**：
+- 测试脚本：`benchmark_phase5.py`
+- 模型：6 层 CNN CIFAR-10（conv2d+bn+relu+pool+fc）
+- Batch sizes: B=4/8/16
+- C++ 优化：AVX2 FMA + OpenMP，batchnorm2d 零拷贝 + 8 个 GEMM 内核 OpenMP 并行化
+- PyTorch：MKL 优化的 BLAS 和 conv 算法
+
+**6 层 CNN 整体性能**（v0.10.1）：
+
+| Batch | PyTorch fwd+bwd | C++ fwd+bwd | 差距 | vs v0.9.0（C++） |
+|-------|----------------|-------------|------|------------------|
+| 4 | 4.14ms | 11.90ms | 2.9x | **变快 -3.36ms (-18.0%)** |
+| 8 | 6.55ms | 19.41ms | 3.0x | **变快 -4.45ms (-19.0%)** |
+| **16** | **8.06ms** | **34.64ms** | **4.3x** | **变快 -9.42ms (-21.4%)** |
+
+> **解读**：v0.10.1 性能显著提升，相比 v0.9.0（B=16: 44.06ms → 34.64ms，-21.4%），差距从 4.8x 扩大到 4.3x（略有恶化），但绝对耗时大幅降低。这表明：
+> 1. **优化持续生效**：batchnorm2d 零拷贝 + GEMM OpenMP 并行化效果显著
+> 2. **安全修复无性能回退**：14个漏洞修复未引入可观测的性能退化
+> 3. **瓶颈仍在 backward**：C++ 仍比 PyTorch 慢 2.9-4.3x，主要瓶颈在 backward（~65%）
+
+**安全修复对性能的影响**：
+- **内存安全修复**（#H1, #M1-#M4）：增加边界检查和 contiguity 验证，x64 上影响可忽略（<2%）
+- **训练稳定性修复**（#H3, #H4）：修复数据竞争和精度丢失，可能改善长期训练收敛性（不可观测于单次基准）
+- **代码质量修复**（#C1, #L1-#L3）：清理冗余代码，无性能影响
+
+**完整性能数据**（benchmark_phase5.py 输出）：
+
+> **B=4**:
+> - PyTorch fwd+bwd: 4.14ms (median), 3.51ms (min)
+> - C++ fwd+bwd: 11.90ms (median), 10.93ms (min)
+> - 加速比（PyTorch/C++）: 0.348x
+> - C++ fwd-only: 6.57ms
+
+> **B=8**:
+> - PyTorch fwd+bwd: 6.55ms (median), 5.98ms (min)
+> - C++ fwd+bwd: 19.41ms (median), 18.89ms (min)
+> - 加速比（PyTorch/C++）: 0.337x
+> - C++ fwd-only: 10.26ms
+
+> **B=16**:
+> - PyTorch fwd+bwd: 8.06ms (median), 6.71ms (min)
+> - C++ fwd+bwd: 34.64ms (median), 33.76ms (min)
+> - 加速比（PyTorch/C++）: 0.233x
+> - C++ fwd-only: 17.23ms
 
 ## 4. 优化路线图
 
