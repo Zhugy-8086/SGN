@@ -14,7 +14,7 @@ SGN（Structured Gradient Network）是一个以**整数 / 量化路径为特色
 - **内置优化器**：SGD，开箱即用
 - **多种反向传播策略**：FLOAT32（默认）/ STE / GEF / SR，可训练中切换
 - **整数路径**：MSint 多精度拆分编码、HC 引擎、Level 调度器（动态精度分配）
-- **CPU 指令集加速**：AVX2 FMA、AVX-VNNI、SSSE3、BMI1/BMI2、AES-NI，自动启用、自动回退
+- **CPU 指令集加速**：AVX-512 / AVX-512VNNI、AVX2 FMA、AVX-VNNI、SSSE3、BMI1/BMI2、AES-NI；运行时 CPUID 检测自动启用、自动回退（无对应指令集的 CPU 安全降级）
 - **与 numpy 零成本桥接**，可经 numpy 中转接入 PyTorch 数据
 
 ---
@@ -46,12 +46,22 @@ with ag.record_scope(clear=True):
 
 # 3. 反向
 y.backward(np.ones_like(y.to_numpy()))
+grads = {name: p.grad for name, p in model.named_parameters()}  # 从 tape 收集梯度
 
-# 4. 训练
-optimizer = sgn.optim.SGD(model, lr=0.01)
-optimizer.step()
-optimizer.zero_grad()
+# 4. 训练（优化器见 sgn.SGD/Adam，基础设施 B1，2026-08-29）
+optimizer = sgn.SGD(model, lr=0.01, momentum=0.9)   # 支持 nn.Module 或 dict[str,ndarray]
+...
+optimizer.step(grads)                                # 显式梯度更新（非 PyTorch 无参 step）
 ```
+> 优化器用法：`sgn.SGD(params, lr, momentum, weight_decay, classical)` / `sgn.Adam(...)`；
+> `params` 可为 nn.Module（经 state_dict 读写）或 `dict[str, np.ndarray]`（训练脚本现状）；
+> `step(grads)` 显式传入 {name: ndarray}（本项目 tape 每步重建 Tensor，梯度收集在训练脚本侧）；
+> `classical=True` 用经典速度式 `v=m·v-lr·g; p+=v`（复现 resnet8 手写更新循环，默认 False 为 PyTorch 式）。
+> 检查点：`sgn.save_checkpoint/load_checkpoint`（params+Optimizer 状态+rng，断点续训逐位可复现）；
+> 实验框架：`sgn.run_seeds/aggregate/export_*`（多 seed 聚合 + CSV/JSON）。
+> 详见 [infrastructure_roadmap_2026_08_29.md](engine/sgn/fixes_相关修复/infrastructure_roadmap_2026_08_29.md)。
+
+> 完整示例见 `examples/mnist_mlp.py`、`examples/cifar10_cnn.py`。
 
 ---
 
@@ -71,6 +81,18 @@ optimizer.zero_grad()
 | 解码有效开销（归一化相对指标） | **0.13×**（目标 ≤ 0.33×，达标） |
 
 所有 SIMD 路径均与标量逐位一致（bit-exact），并保留非 x86（ARM/GPU）标量回退。
+
+### 服务器 AVX-512 加速（EPYC 远程实测，2026-08-31）
+
+远程云主机（AMD EPYC 9Y24 / Zen 4，2 vCPU）实测 AVX-512 路径（K=65536，单核）：
+
+| 原语 | Mops/s |
+|------|--------|
+| dot16（512 位 madd 快速路径） | 23,121 |
+| dot8（512 位 VNNI） | 57,570 |
+
+正确性 **238/238 全过**（512 位路径与标量 bit-exact，含满幅极值）；运行时后端自动选中
+`avx512vnni`。完整方法/数据见 [SGN EPYC 速度测试归档](docs/SGN_EPYC速度测试归档_2026_08_31.md)。
 
 > **内存搬运速度参考**（复现口径见白皮书 §3.6）：本机纯 memcpy 带宽约 **11.9 GB/s**（每字节约 0.08 ns），C++ 批量解码约 **0.27 ns/元素**，已贴近带宽极限。上表中"解码有效开销 0.13×"是**归一化相对指标**（= MSint numpy 位操作解码相对 HC16 慢的倍数 ÷ C++ 批量解码相对 numpy 的加速比），**不是**内存搬运/带宽速度，两者不可混读。
 
@@ -103,6 +125,7 @@ size-class 分桶 + 线程本地无锁复用，对反复分配同尺寸张量的
 - [SGN 用户使用手册](docs/SGN_用户使用手册.md) — 面向普通用户（无需 C++ 基础）
 - [SGN 性能白皮书](docs/SGN_性能白皮书.md) — 性能基线、SIMD 优化与复现方法
 - [SGN 开发者操作手册](docs/SGN_Autograd_用户操作手册.md) — 面向开发者 / 协作者
+- [SGN EPYC 速度测试归档](docs/SGN_EPYC速度测试归档_2026_08_31.md) — AVX-512 服务器路径远程验证（正确性 238 项 + 性能基线）
 
 ---
 
