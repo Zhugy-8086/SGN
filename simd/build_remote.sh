@@ -69,11 +69,14 @@ if ! command -v "$CXX" >/dev/null 2>&1; then
 fi
 
 # ---- 编译选项 ----
-# 基础：C++23，x86-64（不假设具体指令集——dispatch 层运行时 CPUID 检测）。
+# 基础：C++23。⚠️ 必须带 -mavx2 -mavxvnni（与 CMakeLists.txt 全局选项一致）：
+#   avx2.cpp / avxvnni.cpp 用 #if defined(__AVX2__/__AVXVNNI__) 保护整个实现，
+#   dispatch 的赋值也用同宏保护——若基础编译缺这些宏，AVX2/AVX-VNNI 实现将
+#   编译为空、路径永不选中，远程机器只剩标量（2026-08-31 审查发现的 bug）。
 # include 路径指向 simd/ 的父目录（engine/sgn/），因源文件用 #include "simd/simd_api.h"。
-BASE_FLAGS="-O3 -std=c++23 -I.."
+BASE_FLAGS="-O3 -std=c++23 -mavx2 -mavxvnni -I.."
 if [ "$UBSAN" = "1" ]; then
-    BASE_FLAGS="-O1 -std=c++23 -I.. -fsanitize=undefined -fno-sanitize-recover=all"
+    BASE_FLAGS="-O1 -std=c++23 -mavx2 -mavxvnni -I.. -fsanitize=undefined -fno-sanitize-recover=all"
 fi
 BASE_FLAGS="$BASE_FLAGS ${EXTRA_FLAGS:-}"
 

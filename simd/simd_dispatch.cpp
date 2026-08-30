@@ -121,20 +121,14 @@ struct CpuCaps {
 // -nostdlib 链接的 .pyd 无法解析（同 pysgn_net.cpp 的 _cpu_has_avx2 结论）。
 // 跨平台：Windows 用 <intrin.h> 的 __cpuid/__cpuidex/_xgetbv；
 //          Linux 用 <cpuid.h> 的 __get_cpuid/__get_cpuid_count（_xgetbv 同 intrinsic）。
-// 位定义：leaf1 ECX: SSSE3=9, AVX=28, XSAVE=27；leaf7 EBX: AVX2=5, AVX512F=16, AVX512BW=30；
-//         leaf7 subleaf1 ECX: AVX512VNNI=11；XCR0: XMM=1, YMM=2, opmask=4, ZMM hi=8。
+// 位定义：leaf1 ECX: SSSE3=9, AVX=28, XSAVE=27；leaf7 sub0 EBX: AVX2=5, AVX512F=16,
+//         AVX512BW=30；leaf7 sub0 ECX: AVX512VNNI=11, AVX-VNNI=4；XCR0: XMM=1, YMM=2,
+//         opmask=4, ZMM hi=8。
 static void cpuid_leaf(int leaf, int* r) {
 #if defined(_MSC_VER)
     __cpuid(r, leaf);
 #else
     __cpuid_count(leaf, 0, r[0], r[1], r[2], r[3]);
-#endif
-}
-static void cpuid_subleaf(int leaf, int subleaf, int* r) {
-#if defined(_MSC_VER)
-    __cpuidex(r, leaf, subleaf);
-#else
-    __cpuid_count(leaf, subleaf, r[0], r[1], r[2], r[3]);
 #endif
 }
 static CpuCaps cpu_caps_x86() {
@@ -146,7 +140,7 @@ static CpuCaps cpu_caps_x86() {
     c.ssse3 = (r[2] & (1 << 9)) != 0;
     if (os_xsave && cpu_avx && (_xgetbv(0) & 0x6) == 0x6) {
         // XMM+YMM 状态已由 OS 使能（AVX/AVX2 前提）
-        cpuid_leaf(7, r);
+        cpuid_leaf(7, r);  // leaf7 subleaf0：一次调用读全 EBX/ECX/EDX
         c.avx2      = (r[1] & (1 << 5)) != 0;
         c.avx512f   = (r[1] & (1 << 16)) != 0;
         c.avx512_bw = (r[1] & (1 << 30)) != 0;
@@ -154,13 +148,11 @@ static CpuCaps cpu_caps_x86() {
         if (c.avx512f && (_xgetbv(0) & 0xE6) != 0xE6) {
             c.avx512f = c.avx512_bw = false;
         }
-        // AVX-VNNI（256 位 VNNI）：leaf7 subleaf0 ECX bit4
+        // AVX-VNNI（256 位 VNNI）：leaf7 sub0 ECX bit4
         c.avx_vnni = (r[2] & (1 << 4)) != 0;
-        // AVX512-VNNI：leaf7 subleaf1 ECX bit11
-        if (c.avx512f) {
-            cpuid_subleaf(7, 1, r);
-            c.avx512_vnni = (r[2] & (1 << 11)) != 0;
-        }
+        // AVX512-VNNI：leaf7 sub0 ECX bit11（2026-08-31 修正——此前误读 subleaf1，
+        // 而 sub1 ECX 恒为 0 导致 VNNI 永不检测到；复用上方 r[2]，无需再查 CPUID）。
+        c.avx512_vnni = (r[2] & (1 << 11)) != 0;
     }
     return c;
 }
