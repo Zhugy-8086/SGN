@@ -55,7 +55,7 @@ g++ -O3 -std=c++23 -mavx2 -mavxvnni -mavx512f -mavx512bw -mavx512vl -mavx512vnni
     simd/x86/avx512.cpp simd/x86/avx512vnni.cpp simd/arm/neon.cpp \
     -o sgn_benchmark/sgn_benchmark
 
-# 运行（可读输出 + result.json）
+# 运行（人类可读输出 + result.json）
 ./sgn_benchmark/sgn_benchmark
 
 # 仅输出 JSON

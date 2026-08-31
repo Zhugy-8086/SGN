@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 # build_remote.sh - Linux 远程验证脚本：仅编译 simd/ 文件夹，产出独立可执行
 #
-# 背景：simd服务器加速计划_2026_08_30.md §9.3
+# 背景：simd服务器加速计划_2026_08_30.md §9.3 + 全局AVX编译参数移除调查_2026_08_31.md 阶段 1
 #   本机（Arrow Lake，无 AVX-512）无法真跑 AVX-512 路径；远程机器（EPYC 9Y24 等）
 #   用本脚本在 Linux 上独立编译 simd 原语层 + 边界测试，验证真指令 bit-exact。
 #
 # 范围：仅编译 simd/ 下的文件（scalar / simd_dispatch / x86/* / arm/neon /
 #       simd_boundary_test）。不依赖 pybind11、不链接 libomp、无 Python——
 #       纯 C++23，产出单个可执行文件。
+#
+# 阶段 1 per-file 方案（与 CMakeLists.txt 一致）：
+#   基础编译（无 AVX 宏）→ scalar.cpp / simd_dispatch.cpp / arm/neon.cpp /
+#                            simd_boundary_test.cpp
+#   文件级 ISA 选项 → avx2(-mavx2) / avxvnni(-mavx2 -mavxvnni) /
+#                     ssse3(-mssse3 -mavx2) / avx512(-mavx512f -mavx512bw -mavx512vl) /
+#                     avx512vnni(同上 + -mavx512vnni)
+#   simd_dispatch.cpp 无条件引用各实现符号（运行时 CPUID 决定选入），故所有实现文件
+#   必须编译产出符号——不再依赖全局 -mavx2 -mavxvnni。
 #
 # 用法：
 #   ./build_remote.sh                # Release 构建（默认 AVX-512 全开）
@@ -68,49 +77,48 @@ if ! command -v "$CXX" >/dev/null 2>&1; then
     exit 1
 fi
 
-# ---- 编译选项 ----
-# 基础：C++23。⚠️ 必须带 -mavx2 -mavxvnni（与 CMakeLists.txt 全局选项一致）：
-#   avx2.cpp / avxvnni.cpp 用 #if defined(__AVX2__/__AVXVNNI__) 保护整个实现，
-#   dispatch 的赋值也用同宏保护——若基础编译缺这些宏，AVX2/AVX-VNNI 实现将
-#   编译为空、路径永不选中，远程机器只剩标量（2026-08-31 审查发现的 bug）。
+# ---- 基础编译选项（阶段 1：无 AVX 宏，运行时 CPUID 检测）----
 # include 路径指向 simd/ 的父目录（engine/sgn/），因源文件用 #include "simd/simd_api.h"。
-BASE_FLAGS="-O3 -std=c++23 -mavx2 -mavxvnni -I.."
+BASE_FLAGS="-O3 -std=c++23 -I.."
 if [ "$UBSAN" = "1" ]; then
-    BASE_FLAGS="-O1 -std=c++23 -mavx2 -mavxvnni -I.. -fsanitize=undefined -fno-sanitize-recover=all"
+    BASE_FLAGS="-O1 -std=c++23 -I.. -fsanitize=undefined -fno-sanitize-recover=all"
 fi
 BASE_FLAGS="$BASE_FLAGS ${EXTRA_FLAGS:-}"
 
-# AVX-512 仅对 avx512 源文件单独启用（per-file，不污染全局编译）
-AVX512_FLAGS="-mavx512f -mavx512bw -mavx512vl -mavx512vnni"
+# ---- 文件级 ISA 选项（阶段 1，与 CMakeLists.txt set_source_files_properties 一致）----
+# dispatch/scalar/neon/测试：基础编译（无 AVX 宏），dispatch 全走运行时 CPUID。
+declare -A FILE_FLAGS
+FILE_FLAGS[x86/avx2.cpp]="-mavx2"
+FILE_FLAGS[x86/avxvnni.cpp]="-mavx2 -mavxvnni"
+FILE_FLAGS[x86/ssse3.cpp]="-mssse3 -mavx2"
+FILE_FLAGS[x86/avx512.cpp]="-mavx512f -mavx512bw -mavx512vl"
+FILE_FLAGS[x86/avx512vnni.cpp]="-mavx512f -mavx512bw -mavx512vl -mavx512vnni"
 
 echo "[simd] compiler  = $CXX"
 echo "[simd] mode      = $([ "$UBSAN" = 1 ] && echo 'ubsan' || echo 'release')"
 echo "[simd] build dir = $BUILD_DIR"
 
-# ---- 逐文件编译为 .o（avx512 单独带指令选项）----
+# ---- 逐文件编译为 .o（按文件级 ISA 选项；无映射的文件走基础编译）----
 OBJS=()
 for src in "${SRCS[@]}"; do
     obj="$BUILD_DIR/${src//\//_}.o"
+    flags="${FILE_FLAGS[$src]:-}"
     # shellcheck disable=SC2086
-    "$CXX" $BASE_FLAGS -c "$src" -o "$obj"
-    if [[ "$src" == x86/avx512* ]]; then
-        # 重新编译：AVX-512 版本（带指令选项）
-        obj512="$BUILD_DIR/${src//\//_}_avx512.o"
-        # shellcheck disable=SC2086
-        "$CXX" $BASE_FLAGS $AVX512_FLAGS -c "$src" -o "$obj512"
-        OBJS+=("$obj512")
+    "$CXX" $BASE_FLAGS $flags -c "$src" -o "$obj"
+    OBJS+=("$obj")
+    if [ -n "$flags" ]; then
+        echo "[simd] compiled $src ($flags)"
     else
-        OBJS+=("$obj")
+        echo "[simd] compiled $src (base)"
     fi
-    echo "[simd] compiled $src"
 done
 
-# ---- 链接 ----
+# ---- 链接（基础选项即可；各 .o 已带各自指令）----
 OUT="$BUILD_DIR/simd_boundary_test"
 # shellcheck disable=SC2086
 "$CXX" $BASE_FLAGS "${OBJS[@]}" -o "$OUT"
 
 echo "[simd] OK → $OUT"
 echo "[simd] 运行: $OUT"
-echo "[simd] 提示: 远程机器 AVX-512 路径由 simd_dispatch CPUID 检测自动启用；"
+echo "[simd] 提示: 远程机器各路径由 simd_dispatch CPUID 检测自动启用（VNNI/AVX2/AVX-512）；"
 echo "[simd]       如需强制某后端对比，设 SGN_KERNEL_BACKEND=scalar/avx2/avx512"

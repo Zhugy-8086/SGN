@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/code/mimo-test/SGN/engine/sgn/simd/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

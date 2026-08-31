@@ -72,23 +72,19 @@ float sum_sq_dev_f32_scalar(const float*, int64_t, int64_t, float);
 void sum_sumprod_f32_scalar(const float*, const float*, int64_t, int64_t, float*, float*);
 void accum_f32_scalar(float*, const float*, int64_t);
 
-// SIMD 实现（编译期宏保护；非支持平台不编译 → 表中无此项）
-#if defined(__AVXVNNI__)
+// SIMD 实现（无条件声明——符号由 CMake 文件级编译选项保证产出，与 avx512 模式一致，
+// 见 simd服务器加速计划_2026_08_30.md 阶段 1）。运行时由 cpu_caps() 的 CPUID 检测
+// 决定是否选入；实现文件（avx2/avxvnni/ssse3）仅应在支持 x86 的平台参与编译。
 int64_t dot8_vnni(const uint8_t*, const int8_t*, size_t);
 int64_t dot4_vnni(const uint8_t*, const int8_t*, size_t);
-#endif
-#if defined(__AVX2__)
 int64_t dot16_avx2(const int16_t*, const int16_t*, size_t);
 void decode_i16_f32_avx2(const uint64_t*, int, float, float*);
 float sum_f32_avx2(const float*, int64_t, int64_t);
 float sum_sq_dev_f32_avx2(const float*, int64_t, int64_t, float);
 void sum_sumprod_f32_avx2(const float*, const float*, int64_t, int64_t, float*, float*);
 void accum_f32_avx2(float*, const float*, int64_t);
-#endif
-#if defined(__SSSE3__)
 void reverse_bytes8_ssse3(uint64_t, int, int64_t*);
 void batch_reverse_u8_ssse3(const uint64_t*, int, int, int64_t*);
-#endif
 
 // AVX-512 实现（服务器加速，P1；见 simd服务器加速计划_2026_08_30.md）。
 // 无条件声明：avx512.cpp / avx512vnni.cpp 由 CMake 单独加 -mavx512f -mavx512vnni
@@ -160,22 +156,15 @@ static CpuCaps cpu_caps_x86() {
 
 CpuCaps cpu_caps() {
     CpuCaps caps = {false, false, false, false, false, false};
-#if defined(__AVX2__)
-    caps.avx2 = true;
-#endif
-#if defined(__AVXVNNI__)
-    caps.avx_vnni = true;
-#endif
-#if defined(__SSSE3__)
-    caps.ssse3 = true;
-#endif
-// AVX-512：无条件运行时检测（x86）——即使全局 -mavx2 编译下宏已定义 avx2，
-// avx512 也只能经 CPUID 判定（本文件不随 avx512 文件加编译选项）。
+// 全部能力恒走运行时 CPUID 检测（2026-08-31 修正）：此前 `#if defined(__AVX2__)`
+// 等编译期短路会在全局 -mavx2 -mavxvnni 编译下无条件置位 caps.avx2/avx_vnni，
+// 导致有 AVX2 无 AVX-VNNI 的 CPU 仍被选入 vpdpbusd 路径 → illegal instruction。
+// 现在 caps 完全由 cpu_caps_x86() 决定，编译期宏不再参与。
 #if defined(__x86_64__) || defined(_M_X64)
     const CpuCaps rt = cpu_caps_x86();
-    caps.avx2        = caps.avx2        || rt.avx2;
-    caps.avx_vnni    = caps.avx_vnni    || rt.avx_vnni;
-    caps.ssse3       = caps.ssse3       || rt.ssse3;
+    caps.avx2        = rt.avx2;
+    caps.avx_vnni    = rt.avx_vnni;
+    caps.ssse3       = rt.ssse3;
     caps.avx512f     = rt.avx512f;
     caps.avx512_bw   = rt.avx512_bw;
     caps.avx512_vnni = rt.avx512_vnni;
@@ -223,13 +212,12 @@ const SimdBackend& simd_backend() noexcept {
         b.sum_sumprod_f32  = sum_sumprod_f32_scalar;
         b.accum_f32        = accum_f32_scalar;
 
-#if defined(__AVXVNNI__)
+        // AVX2/VNNI/SSSE3：无条件引用（符号常驻），运行时由 caps 的 CPUID 决定选入。
+        // （2026-08-31 修正：此前包在 `#if defined(__AVXVNNI__)` 内，编译期宏短路。）
         if (caps.avx_vnni) {
             b.dot8 = dot8_vnni;
             b.dot4 = dot4_vnni;
         }
-#endif
-#if defined(__AVX2__)
         if (caps.avx2) {
             b.dot16           = dot16_avx2;
             b.decode_i16_f32  = decode_i16_f32_avx2;
@@ -238,13 +226,10 @@ const SimdBackend& simd_backend() noexcept {
             b.sum_sumprod_f32 = sum_sumprod_f32_avx2;
             b.accum_f32       = accum_f32_avx2;
         }
-#endif
-#if defined(__SSSE3__)
         if (caps.ssse3) {
             b.reverse_bytes8   = reverse_bytes8_ssse3;
             b.batch_reverse_u8 = batch_reverse_u8_ssse3;
         }
-#endif
         // AVX-512（P1 服务器加速）：优先于 AVX-VNNI/AVX2 覆盖 compute-bound 原语。
         // decode_i16_f32 无 512 位版，保持 AVX2；reverse/batch 无 512 位版，保持 SSSE3。
         // 运行时 CPUID 检测（本文件基础编译，avx512 符号常驻由 CMake 文件级选项产出）。
