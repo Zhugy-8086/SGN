@@ -409,7 +409,7 @@ print(ag.strategy_name(ag.get_backward_strategy()))
 # 切换策略
 ag.set_backward_strategy(ag.BackwardStrategy.FLOAT32)  # 纯 float32 反向（默认）
 ag.set_backward_strategy(ag.BackwardStrategy.STE)       # 前向量化 + 反向 float32 直通
-ag.set_backward_strategy(ag.BackwardStrategy.GEF)       # HC16 + GEF 梯度误差补偿
+ag.set_backward_strategy(ag.BackwardStrategy.GEF)       # Q16 网格 + GEF 梯度误差补偿
 ag.set_backward_strategy(ag.BackwardStrategy.SR)        # 随机量化
 ```
 

@@ -62,13 +62,13 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 - ✅ **双模式系统**：Module 基类（参数管理、序列化、模式切换）+ Parameter/Buffer 包装
 - ✅ 双模式一致性测试全 PASS：调试模式、稳定模式、混合模式前向输出和梯度完全一致
 - ✅ Tensor 视图操作已实现：`view`/`transpose`/`permute`/`squeeze`/`unsqueeze`/`expand` 全部可用
-- ✅ **反向传播策略框架**：支持 FLOAT32 / STE / GEF / SR 四种策略，HC16/EF_SGD/MSINT/LEVEL_AMP 为桩
+- ✅ **反向传播策略框架**：支持 FLOAT32 / STE / GEF / SR 四种策略，HC16（历史命名 = Q16 对称网格）/EF_SGD/MSINT/LEVEL_AMP 为桩
 - ✅ **算子融合**：`conv2d_relu` 将 conv2d+relu 合并为一个 tape 记录，减少内存遍历
 - ✅ **SIMD 指令集优化**：SSSE3（PABSB/PSIGNB/PALIGNR）、AES-NI（AES-CTR PRNG）、BMI1/2（BEXTR/ANDN/BZHI/PEXT）全部完成，保留 `#ifdef` 回退路径
 - ✅ **Level 调度器 C++ 迁移**：`sgn.level` 子模块（LevelContext、LevelScheduler、BitsAllocator、LevelStrategy/AdaptiveStrategy 等）全部迁移到 C++
 - ✅ **内存安全修复**：5 个高危 + 5 个中危 + 11 个低危全部已修复或确认为非安全问题（VNNI 缓冲区溢出、NULL 解引用、AVX2 越界写、use-after-free ×2、整数溢出、除零、边界检查、输出缓冲区大小参数、Merkle 边界检查、RS 线程安全初始化、trie 深度检查、malloc 失败清零、原子初始化等）
 - ✅ **测试验证**：全量 pytest **275 功能项全通过**（2026-08-16 重建 .pyd 后复测；详见 [SGN 性能白皮书](SGN_性能白皮书.md) §3.6）
-- ⚠️ 性能已优化：AVX2 FMA + OpenMP 已启用（含 2026-08-16 batchnorm2d 零拷贝 + 8 个 GEMM 内核 OpenMP 并行化），比 PyTorch（MKL）慢 3.3-4.8x（fwd+bwd，B=4/8/16），待 AVX-VNNI 进一步优化（性能数据详见 [SGN 性能白皮书](SGN_性能白皮书.md)）
+- ⚠️ 性能已优化：AVX2 FMA + OpenMP 已启用（含 2026-08-16 batchnorm2d 零拷贝 + 8 个 GEMM 内核 OpenMP 并行化），比 PyTorch（MKL）慢 3.3-4.8x（fwd+bwd，B=4/8/16），待 AVX-VNNI 进一步优化（AVX-VNNI 现按运行时 CPUID 自动启用——仅支持该指令集的 CPU 走 `vpdpbusd` 快路径，见下条；性能数据详见 [SGN 性能白皮书](SGN_性能白皮书.md)）
 - ✅ **内存分配**：可插拔分配器抽象 + **通用内存池已实现**（size-class 分桶 + `thread_local` 无锁 free-list，`common/allocator.h` / `common/pool_allocator.h`）。Storage 经 `sgn_allocate_floats()` 走全局分配器（默认 64B 对齐 `aligned new`），并**在分配时捕获 deallocator** 保证 alloc/dealloc 严格配对。池化默认关闭（行为与未池化一致、数值不变），训练前调用 `sgn.set_pool_allocator(True)` 启用、`clear_pool()` 清池（实测见 [SGN 性能白皮书](SGN_性能白皮书.md) §7）
 - ✅ **统一 C++ 日志**：`common/logger.h`（header-only、零依赖），级别控制（DEBUG/INFO/WARN/ERROR，`SGN_LOG_LEVEL` 环境变量覆盖）+ 可插拔 sink 接口（`set_log_sink()` 接外部后端日志系统）。生产中无散落打印点，属纯基础设施补齐（P0）
 - ✅ **Tape 架构改造**：`Tape::current()` 改为 `thread_local`（每线程独立实例，多线程训练安全）；`Record::backward_fn`（`std::function`）改为 `Record::backward_node`（`std::unique_ptr<NodeBase>`，type-erased）；backward 中梯度用 **move 语义消费**（每个 output grad 恰好被消费一次），完成后 `records_.clear()` 自动释放 graph，叶梯度保留在 `grads_` 供查询（P2）
@@ -81,6 +81,7 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 - ✅ 内置损失函数：`sgn.loss` 模块（MSELoss / CrossEntropyLoss / WeightedSumLoss + LossDiagnoser 诊断器）
 - ✅ **MSint 多精度拆分组合落地（v0.8.1）**：`sgn.SplitDot` / `sgn.MultiScaleView` / `sgn.PrecisionSelector` / `sgn.LeveledSplitDot` 已实现——1:N 多精度解释（int32→{16,8,4} 每层可逆）+ Level 逐元素精度选择（重要性越高拆分越细）组合为异构粒度逐元素拆分点积，融合仍 bit-exact 等价原始点积；数学验证 #22–#28 全通过
 - ✅ **H3 带宽基准 + SIMD 优化基线（v0.8.1）**：H3 带宽加速已证实（按需位宽 + 1:N 多输出复用两个正交来源）；`validate_bench_msint_simd_baseline.py` 固化未优化标量 baseline 与 SIMD 适用性分析——**唯一优化焦点为 dot_split 组内点积**（已实施：16 位 AVX2 `mul_epi32` + 8 位 AVX-VNNI `dpbusd` + 4 位 nibble `vpshufb`+`dpbusd`，见 [SGN 性能白皮书](SGN_性能白皮书.md) §5），决策层/控制层/128 位融合不做；硬约束：SIMD 必须编译时宏保留非 x86 标量回退
+- ✅ **全局 AVX 编译参数移除（2026-08-31，阶段 1-4）**：CMake 不再全局 `-mavx2 -mavxvnni`（全局仅 `-O3`），AVX2/AVX-VNNI/FMA 下沉 per-file（simd/、hc/、ops）+ 编译期宏短路消除 → 指令集选择**完全由运行时 CPUID 门控**：同一二进制在无 AVX-VNNI 的 CPU 上自动回退 AVX2/标量，不再 illegal instruction；同时修复本机 `sgn.diagnose()` 此前虚报 `AVX-VNNI ✓` 的问题（该值是编译期宏假象，见 [全局AVX编译参数移除调查](engine/sgn/fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md)）
 
 ---
 
@@ -154,13 +155,17 @@ cd engine/sgn/build
 python -c "import sgn; print(sgn.version()); print(sgn.test_avx_vnni())"
 ```
 
-预期输出：
+预期输出（以本机 Intel Arrow Lake 实测为例）：
 ```
 Stage 3.0 placeholder
-2
+8
 ```
 
-> 若 `test_avx_vnni()` 返回 `2`，说明 AVX-VNNI intrinsics 可用（`_mm256_dpbusd_epi32`）。
+> `test_avx_vnni()` **真实执行** `_mm256_dpbusd_epi32` 并返回结果：`8` = 指令执行成功的
+> 正确结果（每 lane 1×2×4），说明 AVX-VNNI 可用；若 CPU 不支持该指令，执行会抛
+> illegal instruction（Python 层捕获后按不可用处理，见 16.1 诊断说明）。该检测值与
+> 编译期宏解耦——2026-08-31 起（阶段 1-4 全局 AVX 参数移除）在无 AVX-VNNI 的机器上
+> 同样可安全运行，只是落 AVX2/标量路径。
 
 ### 3.6 运行 C++ 测试目标
 
@@ -651,10 +656,10 @@ ag.set_backward_strategy(ag.BackwardStrategy.FLOAT32)
 | 策略 | 枚举值 | 状态 | 说明 |
 |------|--------|------|------|
 | FLOAT32 | `BackwardStrategy.FLOAT32` | ✅ 已实现 | 纯 float32 反向（默认） |
-| STE | `BackwardStrategy.STE` | ✅ 已实现 | 前向 HC8/16 量化，反向 float32 直通 |
-| HC16 | `BackwardStrategy.HC16` | ⬜ 桩 | HC16 整数反向 |
-| GEF | `BackwardStrategy.GEF` | ✅ 已实现 | HC16 + GEF 梯度误差补偿 |
-| SR | `BackwardStrategy.SR` | ✅ 已实现 | 随机量化 |
+| STE | `BackwardStrategy.STE` | ✅ 已实现 | 前向 Q8/Q16 量化，反向 float32 直通 |
+| HC16 | `BackwardStrategy.HC16` | ⬜ 桩 | 整数反向（历史命名 = Q16 对称网格，桩） |
+| GEF | `BackwardStrategy.GEF` | ✅ 已实现 | Q16 网格 + GEF 梯度误差补偿（自包含，不依赖 HC 库） |
+| SR | `BackwardStrategy.SR` | ✅ 已实现 | Q16 网格伯努利随机舍入（自包含，不依赖 HC 库） |
 | EF_SGD | `BackwardStrategy.EF_SGD` | ⬜ 桩 | 误差反馈跨 step 累积 |
 | MSINT | `BackwardStrategy.MSINT` | ⬜ 桩 | MSint 多视角异构精度 |
 | LEVEL_AMP | `BackwardStrategy.LEVEL_AMP` | ⬜ 桩（待实现） | Level 驱动逐层异构精度 |
@@ -980,7 +985,7 @@ grad_torch = torch.from_numpy(grad_numpy)
 |------|------|----------|------|
 | 最多 4D Tensor | 无法直接处理 5D+ | reshape 到 4D | 扩展 `Storage` 支持任意维 |
 | 无 `sum`/`mean` 等归约算子 | loss 需在 PyTorch 端算 | backward 时传入 dY | 按需添加 |
-| 反向策略 FLOAT32/STE/GEF/SR | HC16/EF_SGD/MSINT/LEVEL_AMP 为桩 | 用 Python 层 GEF 替代 | 策略收敛后逐步实现 |
+| 反向策略 FLOAT32/STE/GEF/SR | HC16（历史命名）/EF_SGD/MSINT/LEVEL_AMP 为桩 | 用 Python 层 GEF 替代 | 策略收敛后逐步实现 |
 | 内存池默认关闭 | 池化需训练前显式 `sgn.set_pool_allocator(True)` 启用 | 不启用则与 stdlib 行为一致 | ✅ 已实现（`common/pool_allocator.h`，size-class + thread_local 无锁） |
 | ✅ 标准层 Module 子类 | — | — | v0.8.0 已实现 |
 | BN eval 模式前向未实现 | 推理时 BN 行为不正确 | 手动计算推理 BN | 按需添加 |
@@ -1195,7 +1200,7 @@ Remove-Item Env:SGN_DEBUG
 >>> import sgn
 >>> print(sgn.diagnose())
 SGN version: Stage 3.0 placeholder
-Build: 2026-08-06 10:32
+Build: 2026-08-31 15:08
 Compiler: Clang 22.1.8
 Python: 3.14.5
 CPU: AVX2 ✓  AVX-VNNI ✓
@@ -1203,6 +1208,15 @@ Submodules: col2im_c ✓  hc8_net ✓  hc16 ✓  hc16ms ✓  hc4 ✓  autograd �
 ```
 
 **用途**：排查构建问题、确认编译器和 CPU 特性、快速了解模块状态。
+
+> **AVX-VNNI 显示说明**（2026-08-31 起，阶段 1-4 全局 AVX 编译参数移除后）：
+> `sgn.diagnose()` 中的 `AVX-VNNI` 状态来自**实际执行验证**：调用 `test_avx_vnni()`
+> 真实执行 `_mm256_dpbusd_epi32`，返回正确结果（`8` = 每 lane 1×2×4）即 `✓`；
+> 指令不可用/执行异常（illegal instruction，try/except 捕获）即 `✗` ——**不再依赖编译期宏假象**。
+> 本机（Intel Arrow Lake 实测）显示 `✓`。大小核混合架构（未来处理器）若 probe 线程
+> 落在不支持 VNNI 的 E-core 上可能显示 `✗`（不影响安全——此时 `vpdpbusd` 路径不会
+> 被调用，自动落 AVX2/标量）。远程 EPYC（Zen 4，全核统一指令集）必定显示 `✓`。
+> `test_avx_vnni()` 返回 `int`：`8`=指令真实执行成功（测试向量结果）、其它/异常=不可用。
 
 ### 16.2 `sgn.test()` — 快速自检
 
