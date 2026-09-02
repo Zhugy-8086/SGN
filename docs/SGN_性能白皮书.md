@@ -7,6 +7,7 @@
 - [1. 概述与复现说明](#1-概述与复现说明)
 - [2. 性能限制（历史数据）](#2-性能限制历史数据)
 - [3. 性能基线（6 层 CNN 各版本）](#3-性能基线6-层-cnn-各版本)
+  - 3.0 基线升级（2026-09-03，8 层 ResNet-8 × MNIST）
   - 3.1 当前基线（v0.5）
   - 3.2 v0.7.2 中危修复后基准
   - 3.3 v0.7.3 低危修复后补充基准
@@ -285,6 +286,33 @@ Python 传入的维度参数使用 `uint32_t` 类型，但在校验时计算 `m*
 
 ## 3. 性能基线（6 层 CNN 各版本）
 
+### 3.0 基线升级（2026-09-03）：8 层经典架构（ResNet-8）× MNIST
+
+> **为何升级**：原基线模型 6 层 CNN（CIFAR-10）规模偏小，对残差结构、更深 conv
+> 链等真实负载覆盖不足。新基线采用仓库既有经典 8 层架构 **ResNet-8**（conv1 +
+> 3 残差 stage × 2 conv + 1×1 shortcut + GAP + fc，7 conv + 1 fc = 8 加权层，
+> 全程 BN），数据集改用 **MNIST**（`data/MNIST/raw`，28×28×1，输入通道=1 适配），
+> 脚本 [benchmark_mnist8.py](../engine/sgn/autograd/benchmark_mnist8.py)。
+
+测试环境：Arrow Lake（Core Ultra 5 225），Clang 22.1.8 Release + libomp，
+torch 2.13.0+cpu。**线程口径**：两侧均钉单线程（`OMP_NUM_THREADS=1` +
+`torch.set_num_threads(1)`）——小 batch 下 torch 默认 10 线程的线程池同步开销
+主导且受宿主省电状态影响剧烈波动（同负载实测 20-145ms 不可横比），1 线程稳定；
+SGN 侧 OpenMP 在此规模近似串行，两侧同口径。计时 = fwd+bwd 中位数（10 轮，
+3 轮预热），权重数值初始化移出计时区。
+
+| Batch | SGN fwd+bwd (ms) | PyTorch fwd+bwd (ms) | SGN/PyTorch |
+|-------|-----------------|---------------------|-------------|
+| 4     | 14.3            | 9.5                 | 1.5x        |
+| 8     | 33.5            | 12.4                | 2.7x        |
+| 16    | 68.6            | 26.2                | 2.6x        |
+
+**归因声明（重要）**：本表为**模型规模/数据集基线升级**，不是版本性能变化的
+证据——mkern R1（浮点归约固定树）/R2（dot4_packed 4 链）/R3（mkern/gemm）均
+不在 float 训练主路径上（R1 仅改变 sum 系累加语义、性能持平；R2/R3 当前无
+Python 可见消费方）。与 3.1-3.3 的历史表不可直接横比（模型、数据集、线程口径
+均不同）；本表同时确认 mkern R1-R3 落地后整体框架**未回归**。
+
 ### 3.1 当前基线（2026-08-04，v0.5）
 
 测试环境：AVX2 FMA + OpenMP，Clang 22.1.8 Release。
@@ -350,6 +378,7 @@ Python 传入的维度参数使用 `uint32_t` 类型，但在校验时计算 `m*
 | 大规模 B=8 C=128 | 0.605ms | 0.744ms | **0.81x** | ✓ **C++ 比原C更快** |
 
 完整数据见：
+- [benchmark_mnist8.py](engine/sgn/autograd/benchmark_mnist8.py) — 8 层经典架构（ResNet-8）× MNIST 整体性能（§3.0 基线）
 - [benchmark_phase5.py](engine/sgn/autograd/benchmark_phase5.py) — 6 层 CNN 整体性能
 - [benchmark_ste_fusion.py](engine/sgn/autograd/benchmark_ste_fusion.py) — STE 策略 + 融合算子性能
 - [bench_sbe_c.py](engine/sgn/tests/hc_ext/bench_sbe_c.py) — SBE C vs Python numpy 性能
@@ -523,6 +552,14 @@ MSint 核心路径（`packed_backend`、`hc8_net`）已完成以下指令集优�
 > 真实内存搬运速度实测（2026-08-04 首测）：本机纯 memcpy 带宽约 **12 GB/s（每字节约 0.08 ns）**；C++ 批量解码每元素约 **0.3 ns**。**2026-08-16 十次均值口径复测（最新，见 §3.6）**：memcpy 约 **11.9 GB/s（每字节 0.08 ns）**、C++ 解码 **0.27 ns/元素**、有效开销 **0.13× ≤ 0.33 目标（达标）**。一键复测与完整推导/反证见 [validate_decode_overhead_vs_memory_bandwidth.py](engine/sgn/tests/validate_decode_overhead_vs_memory_bandwidth.py)。
 
 **MSint dot_split 组内点积 SIMD（2026-08-13 已实施）**：
+
+> **位置与层级更新（2026-09-03）**：simd 原语层已迁入微内核层——现路径为
+> `engine/sgn/mkern/simd/`（与 dispatch Tensor 算子层、mkern 矩阵级层构成三层内核
+> 架构；矩阵级层 `mkern/gemm/` 于 2026-09-03 R3 落地 gemm_i8/gemm_i16/gemv_i8，
+> 独立基准见 [mkern微内核层实施计划](../fixes_相关修复/mkern微内核层实施计划_2026_09_03.md)
+> §五.4）。同日 R1 修订：sum 系浮点归约统一固定 8 路树并升 kBitExact（性能持平）；
+> R2 修订：dot4_packed 改 4 累加链后 K=65536 反超解包路径 1.30×（此前"恒 0.6×"
+> 系 2 链次优实现所致，见同计划 §五.3）。
 
 异构粒度拆分点积路径（`dot_split` / `dot_split_leveled`）已按方案 A 完成窄精度打包 SIMD 优化。指令集选择说明（2026-08-31 阶段 2 更新 + 2026-09-02 CPUID 修复）：早期版本的编译期宏（`__AVX2__` / `__AVXVNNI__`）短路已移除，现由 simd 原语层**运行时 CPUID 调度**决定后端（非 x86 走标量锚点回退）；AVX-VNNI 检测位曾双重错位（读 sub0 ECX[4]=OSPKE，正确为 sub1 EAX[4]），OSPKE=0 机器（如 Arrow Lake/Windows）上 dot8/dot4 曾静默落标量，2026-09-02 修复后本机实测 dot8 原语 2,279→48,757–93,516 Mops/s（~30×，详见 [SGN Arrow Lake 速度测试归档](SGN_ArrowLake速度测试归档_2026_09_02.md)）：
 
