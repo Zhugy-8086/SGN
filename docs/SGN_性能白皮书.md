@@ -524,7 +524,7 @@ MSint 核心路径（`packed_backend`、`hc8_net`）已完成以下指令集优�
 
 **MSint dot_split 组内点积 SIMD（2026-08-13 已实施）**：
 
-异构粒度拆分点积路径（`dot_split` / `dot_split_leveled`）已按方案 A 完成窄精度打包 SIMD 优化，保留编译期宏（`__AVX2__` / `__AVXVNNI__`）非 x86（ARM/GPU）标量回退：
+异构粒度拆分点积路径（`dot_split` / `dot_split_leveled`）已按方案 A 完成窄精度打包 SIMD 优化。指令集选择说明（2026-08-31 阶段 2 更新 + 2026-09-02 CPUID 修复）：早期版本的编译期宏（`__AVX2__` / `__AVXVNNI__`）短路已移除，现由 simd 原语层**运行时 CPUID 调度**决定后端（非 x86 走标量锚点回退）；AVX-VNNI 检测位曾双重错位（读 sub0 ECX[4]=OSPKE，正确为 sub1 EAX[4]），OSPKE=0 机器（如 Arrow Lake/Windows）上 dot8/dot4 曾静默落标量，2026-09-02 修复后本机实测 dot8 原语 2,279→48,757–93,516 Mops/s（~30×，详见 [SGN Arrow Lake 速度测试归档](SGN_ArrowLake速度测试归档_2026_09_02.md)）：
 
 - **split_bits=16（AVX2 窄路径）**：低位无符号部分用偏置法（`s = u − 2¹⁵`）转有符号 int16，`_mm256_mul_epi32`（vpmuldq）分偶/奇 lane 得精确 int64 乘积；每点积实测 **8.9–9.3×**（生产内核，2026-08-14 复测）。`_mm256_madd_epi16` 不可用（相邻两个 `−2¹⁵×−2¹⁵` 乘积和恰好溢出 int32，破坏 bit-exact）。
 - **split_bits=8（AVX-VNNI 窄路径）**：偏置法（`s = u − 2⁷`）转有符号 int8，`_mm256_dpbusd_epi32`（vpdpbusd，uint8×int8→int32，32 MAC/指令）精确累加；每点积实测 **26.9–32.3×**（生产内核）。`_mm256_maddubs_epi16` 不可用（相邻两个 byte 满幅乘积和 65280 > int16 上限 32767，饱和破坏 bit-exact）。
@@ -542,6 +542,18 @@ MSint 核心路径（`packed_backend`、`hc8_net`）已完成以下指令集优�
 - **降档决策正式接口（`select_precision` + `dot_split_leveled_downcast` / `dot_fused_leveled_downcast`）**：按 importance 为逐元素选择精度位数 p ∈ {8,16,32}（低重要度 → 少位数），每组 keep_top + 4 位摊销点积。`n²` 计算量随精度位数**平方下降**：int8 档（n=2，4 组合）端到端反超 numpy **2.1~2.4x**、int16 档（n=4，16 组合）临界持平（0.8~0.91x）、int32 档（n=8，64 组合）仍慢（0.23~0.29x）。含三个默认重载（`select_precision_default` / `dot_split_leveled_downcast_default` / `dot_fused_leveled_downcast_default`）。Python fallback 同步，验证 4 节全 PASS（决策方向 / 组内 bit-exact / C++-fallback 一致 / 误差 rel_err 2e-4~3e-2 ≈ 2^(1-p)）。详见 [dot_split_leveled_grouping_heap_overhead_2026_08_14.md](fixes_相关修复/architecture/dot_split_leveled_grouping_heap_overhead_2026_08_14.md) §7.8。
 
 方案细节、偏置修正数学推导与实测数据见 [dot_split_simd_optimization_plan_2026_08_13.md](fixes_相关修复/architecture/dot_split_simd_optimization_plan_2026_08_13.md)。
+
+**int8 对（h,l）梯度载体消费端（2026-09-02，CPUID 修复后）**：
+
+int8 对叶梯度存储（`set_pair_grad_store`，实验功能默认关闭）的 dot8 消费路径实测（Arrow Lake Ultra 5 225 / avxvnni 后端，`bench_grad_int8_pair_dot8.py`）：
+
+| 层面 | K | 修复前（dot8 落标量） | 修复后（avxvnni） |
+|------|---|------|------|
+| dot8 原语（sgn_benchmark） | 4096 | 2,261 Mops/s | **93,516 Mops/s（~41×）** |
+| dot_split(16,8) 端到端（.pyd） | 16384 | 2.573 ms | 0.650 ms（4.0×） |
+| dot_split(16,8) 端到端（.pyd） | 65536 | 10.105 ms | 3.515 ms（2.9×） |
+
+关键定性（**入口决定瓶颈**）：Python list 入口被 per-element 拆分打包主导（K=16384 端到端 650 µs 中 dot8 计算仅 0.75 µs，<0.2%）；C++ 内部预打包消费路径（`narrow_dot` 直调，x 侧打包跨 M 行摊销）才完全兑现原语加速。对 optimizer 的含义：pair 存储的显存收益（-50%）与存储闭环已兑现，dot8 消费加速待未来 C++ 优化器。完整分析见 [msint_int8_pair_grad_carrier_2026_08_31.md](fixes_相关修复/msint_int8_pair_grad_carrier_2026_08_31.md) §八、[SGN Arrow Lake 速度测试归档](SGN_ArrowLake速度测试归档_2026_09_02.md)。
 
 ## 6. 验证方法
 

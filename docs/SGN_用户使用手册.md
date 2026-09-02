@@ -411,6 +411,7 @@ ag.set_backward_strategy(ag.BackwardStrategy.FLOAT32)  # 纯 float32 反向（�
 ag.set_backward_strategy(ag.BackwardStrategy.STE)       # 前向量化 + 反向 float32 直通
 ag.set_backward_strategy(ag.BackwardStrategy.GEF)       # Q16 网格 + GEF 梯度误差补偿
 ag.set_backward_strategy(ag.BackwardStrategy.SR)        # 随机量化
+ag.set_backward_strategy(ag.BackwardStrategy.A1)        # A1 主线：前向 Q8 STE + 反向 SR
 ```
 
 **策略说明**：
@@ -421,6 +422,36 @@ ag.set_backward_strategy(ag.BackwardStrategy.SR)        # 随机量化
 | STE | 量化训练入门 | 前向量化量化，反向直通，简单高效 |
 | GEF | 高精度量化训练 | 梯度误差补偿，精度接近 FLOAT32 |
 | SR | 随机量化 | 随机量化，无偏但方差较大 |
+| A1 | **推荐训练主路径** | 前向 Q8 STE + 反向 SR（2026-08-19 主线） |
+
+### 6.1 int8 对（h,l）叶梯度存储（实验功能，默认关闭）
+
+将单路径叶梯度以 int8 对（高位肢 h + 低位肢 l，2B/元素）存储，**显存省 50%**，
+训练动态与关闭时逐位一致（同种子验证）。属 MSint×Level 研究方向的落地功能，
+默认关闭，按实验场景开启：
+
+```python
+# 开启（策略须为 SR/A1 且反向量化 bits=16，其余情况自动回退 float 存储）
+ag.set_pair_grad_store(True)
+
+# ... 训练循环不变：w.grad 透明解码，optimizer 零改动 ...
+
+# 研究视图：直接访问 int8 对表示（不触发解码）
+v = ag.grad_pair(w.id)          # PairGradView 或 None（未以 pair 存储时）
+h, l = v.h(), v.l()             # 高位肢/低位肢（uint8 numpy）
+q = v.q()                       # Q16 网格整数（q = 256·h + l − 32768）
+fine = v.fine()                 # ≡ Q16-SR 精确恢复（g = q·scale）
+coarse = v.coarse()             # Q8 级近似（256·h_s·scale，粗层实验入口）
+s = v.dot_fine(w8_int8)         # 真实梯度 × 权重的 dot8 消费（int64 精确）
+
+ag.set_pair_grad_store(False)   # 关闭（恢复 float32 存储）
+```
+
+**语义与边界**：
+- 多路径叶（权重共享）自动回退 float 存储；`grad_pair` 返回 None
+- 每种子的训练结果与关闭时逐位一致（数学层 V7 dev=0 + 守卫测试 97 项）
+- 视图为只读拷贝；数学依据见主报告
+  [msint_int8_pair_grad_carrier_2026_08_31.md](../fixes_相关修复/msint_int8_pair_grad_carrier_2026_08_31.md) §六/§七/§八
 
 ---
 

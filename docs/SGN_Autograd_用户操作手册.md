@@ -82,6 +82,8 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 - ✅ **MSint 多精度拆分组合落地（v0.8.1）**：`sgn.SplitDot` / `sgn.MultiScaleView` / `sgn.PrecisionSelector` / `sgn.LeveledSplitDot` 已实现——1:N 多精度解释（int32→{16,8,4} 每层可逆）+ Level 逐元素精度选择（重要性越高拆分越细）组合为异构粒度逐元素拆分点积，融合仍 bit-exact 等价原始点积；数学验证 #22–#28 全通过
 - ✅ **H3 带宽基准 + SIMD 优化基线（v0.8.1）**：H3 带宽加速已证实（按需位宽 + 1:N 多输出复用两个正交来源）；`validate_bench_msint_simd_baseline.py` 固化未优化标量 baseline 与 SIMD 适用性分析——**唯一优化焦点为 dot_split 组内点积**（已实施：16 位 AVX2 `mul_epi32` + 8 位 AVX-VNNI `dpbusd` + 4 位 nibble `vpshufb`+`dpbusd`，见 [SGN 性能白皮书](SGN_性能白皮书.md) §5），决策层/控制层/128 位融合不做；硬约束：SIMD 必须编译时宏保留非 x86 标量回退
 - ✅ **全局 AVX 编译参数移除（2026-08-31，阶段 1-4）**：CMake 不再全局 `-mavx2 -mavxvnni`（全局仅 `-O3`），AVX2/AVX-VNNI/FMA 下沉 per-file（simd/、hc/、ops）+ 编译期宏短路消除 → 指令集选择**完全由运行时 CPUID 门控**：同一二进制在无 AVX-VNNI 的 CPU 上自动回退 AVX2/标量，不再 illegal instruction；同时修复本机 `sgn.diagnose()` 此前虚报 `AVX-VNNI ✓` 的问题（该值是编译期宏假象，见 [全局AVX编译参数移除调查](engine/sgn/fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md)）
+- ✅ **AVX-VNNI CPUID 检测修复 + sgn_benchmark 收编（2026-09-02）**：simd_dispatch 的 AVX-VNNI 检测双重错位修复（sub0 ECX[4]=OSPKE → sub1 EAX[4]），OSPKE=0 机器上 dot8/dot4 从静默标量回退恢复 VNNI 快路径（本机 Arrow Lake 实测 dot8 原语 ~30×，2.9k→93.5k Mops/s）；原语基准 `sgn_benchmark` 收编进 simd 主构建（portable 版，任意机器一键验证）。详见 [SGN Arrow Lake 速度测试归档](SGN_ArrowLake速度测试归档_2026_09_02.md)
+- ✅ **int8 对（h,l）叶梯度存储（2026-09-02，实验功能默认关闭）**：`set_pair_grad_store` 开关 + `grad_pair`/`PairGradView` 研究视图——单路径叶梯度 2B/元素存储（显存 -50%），grad() 透明解码缓存，训练动态与关闭时逐位一致；SR 序列对齐由共享内核 sr_kernel.cpp 结构保证。用法见 §6.3.1，数学验证见统一数学框架 #30/#31/#32
 
 ---
 
@@ -660,11 +662,42 @@ ag.set_backward_strategy(ag.BackwardStrategy.FLOAT32)
 | HC16 | `BackwardStrategy.HC16` | ⬜ 桩 | 整数反向（历史命名 = Q16 对称网格，桩） |
 | GEF | `BackwardStrategy.GEF` | ✅ 已实现 | Q16 网格 + GEF 梯度误差补偿（自包含，不依赖 HC 库） |
 | SR | `BackwardStrategy.SR` | ✅ 已实现 | Q16 网格伯努利随机舍入（自包含，不依赖 HC 库） |
+| A1 | `BackwardStrategy.A1` | ✅ 已实现 | **推荐训练主路径**（2026-08-19）：前向 Q8 STE + 反向 SR |
 | EF_SGD | `BackwardStrategy.EF_SGD` | ⬜ 桩 | 误差反馈跨 step 累积 |
 | MSINT | `BackwardStrategy.MSINT` | ⬜ 桩 | MSint 多视角异构精度 |
 | LEVEL_AMP | `BackwardStrategy.LEVEL_AMP` | ⬜ 桩（待实现） | Level 驱动逐层异构精度 |
 
 > ⚠️ 未实现策略调用时会抛出 `RuntimeError`。
+
+#### 6.3.1 int8 对（h,l）叶梯度存储（2026-09-02，实验功能默认关闭）
+
+单路径叶梯度以 int8 对（U 方案编码，2B/元素）存储，**叶梯度显存省 50%**，
+训练动态与关闭时逐位一致（同种子守卫测试 97 项）。生效条件：策略 ∈ {SR, A1}
+且反向量化 bits=16；FLOAT32/GEF/多路径叶（权重共享）自动回退 float 存储。
+
+```python
+ag = sgn.autograd
+
+ag.set_pair_grad_store(True)     # 开启（默认 False = 现状 float32 逐位不变）
+ag.pair_grad_store()             # 查询开关状态
+
+# grad() 透明解码：pair 存储 → 惰性解码 + 缓存（每 step 一次解码），
+# optimizer/训练脚本零改动；clear() 清缓存
+g = w_t.grad                     # 与关闭时同种子逐位一致
+
+# 显式研究视图（PairGradView，只读拷贝）
+v = ag.grad_pair(w_t.id)         # None 表示未以 pair 存储
+v.h() / v.l()                    # 高位肢/低位肢（uint8 numpy）
+v.q()                            # Q16 网格整数（q = 256·h + l − 32768）
+v.fine() / v.coarse()            # fine ≡ Q16-SR 恢复；coarse = Q8 级（粗层实验入口）
+v.dot_fine(w8) / v.dot_coarse(w8)  # dot8 消费（int64 精确，C++ 闭环）
+
+ag.set_pair_grad_store(False)    # 关闭
+```
+
+数学依据与验证链：[msint_int8_pair_grad_carrier_2026_08_31.md](../fixes_相关修复/msint_int8_pair_grad_carrier_2026_08_31.md)
+§六/§七/§八（统一数学框架 #30/#31/#32）；SR 序列对齐由共享内核
+（autograd/sr_kernel.cpp）结构保证。
 
 ---
 
