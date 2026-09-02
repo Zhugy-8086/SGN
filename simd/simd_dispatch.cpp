@@ -20,6 +20,7 @@
 
 #include "simd/simd_api.h"
 
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -94,6 +95,9 @@ void accum_f32_scalar(float*, const float*, int64_t);
 int64_t dot8_vnni(const uint8_t*, const int8_t*, size_t);
 int64_t dot4_vnni(const uint8_t*, const int8_t*, size_t);
 int64_t dot16_avx2(const int16_t*, const int16_t*, size_t);
+// dot8/dot4 AVX2 中间档（avx2_dot.cpp，综合执行计划 §一）——无 VNNI 的 AVX2 平台兜底
+int64_t dot8_avx2(const uint8_t*, const int8_t*, size_t);
+int64_t dot4_avx2(const uint8_t*, const int8_t*, size_t);
 void decode_i16_f32_avx2(const uint64_t*, int, float, float*);
 float sum_f32_avx2(const float*, int64_t, int64_t);
 float sum_sq_dev_f32_avx2(const float*, int64_t, int64_t, float);
@@ -257,6 +261,14 @@ const SimdBackend& simd_backend() noexcept {
             b.sum_sq_dev_f32  = sum_sq_dev_f32_avx2;
             b.sum_sumprod_f32 = sum_sumprod_f32_avx2;
             b.accum_f32       = accum_f32_avx2;
+            // dot8/dot4 AVX2 中间档（综合执行计划 §一）：仅在本机无 AVX-VNNI（且无
+            // AVX512-VNNI，其优先级更低在后方）时选入，否则保持已选入的 vnni 档。
+            // 代码序（vnni 在前）天然保证：vnni 已选则此处于 !avx_vnni 时覆盖，
+            // 512 vnni 在最后仍优先。选择链 scalar→avx2→avx_vnni→avx512vnni。
+            if (!caps.avx_vnni && !caps.avx512_vnni) {
+                b.dot8 = dot8_avx2;
+                b.dot4 = dot4_avx2;
+            }
         }
         if (caps.ssse3) {
             b.reverse_bytes8   = reverse_bytes8_ssse3;
@@ -293,6 +305,28 @@ const char* active_backend_name() noexcept {
     return simd_backend().name;
 }
 
+// 原语精度档位查询（综合执行计划 §二.3）：后端无关，保守口径见 simd_api.h 声明。
+//   - 整型/字节原语 → kBitExact（结果与后端无关）
+//   - float 归约/累加 → kRounding（跨后端可复现需留意累加器路数差异）
+PrecisionClass primitive_precision_class(PrimitiveId id) noexcept {
+    switch (id) {
+        case PrimitiveId::Dot16:
+        case PrimitiveId::Dot8:
+        case PrimitiveId::Dot4:
+        case PrimitiveId::DecodeI16:
+        case PrimitiveId::DecodeI16Packed:
+        case PrimitiveId::Reverse:
+        case PrimitiveId::BatchReverse:
+            return PrecisionClass::kBitExact;
+        case PrimitiveId::Sum:
+        case PrimitiveId::SumSqDev:
+        case PrimitiveId::SumSumprod:
+        case PrimitiveId::Accum:
+            return PrecisionClass::kRounding;
+    }
+    return PrecisionClass::kBitExact;  // 不可达（覆盖全枚举）
+}
+
 // ============================================================================
 // 调度入口（公开接口，simd_api.h 声明；调用方零改动）
 // ============================================================================
@@ -314,11 +348,19 @@ void decode_i16_f32(const uint64_t* pv_ptr, int n_values, float scale, float* re
 }
 
 void reverse_bytes8(uint64_t packed, int n, int64_t* out) {
+    // 参数契约（simd_api.h）：n ∈ [1,8]。契约外取值（n<1 或 n>8）会导致标量锚点
+    // `packed >> (8*(n-1-i))` 移位量超 63（UB）或 SSSE3 越界读，必须在 Debug 兜住
+    // （2026-09-02 EPYC 9K65 复核问题 ③；调用方 packed_backend 均在契约内）。
+    assert(n >= 1 && n <= 8);
     simd_backend().reverse_bytes8(packed, n, out);
 }
 
 void batch_reverse_u8(const uint64_t* packed_values, int n_values, int n_slots,
                       int64_t* result) {
+    // 参数契约（simd_api.h）：n_slots ∈ [1,8]。契约外取值（n_slots<1 或 >8）会导致
+    // SSSE3 路径 `off = 8 - n_slots` 越界读（n_slots>8 时 off<0，badread），必须在
+    // Debug 兜住（2026-09-02 EPYC 9K65 复核问题 ③；调用方 packed_backend 均契约内）。
+    assert(n_slots >= 1 && n_slots <= 8);
     simd_backend().batch_reverse_u8(packed_values, n_values, n_slots, result);
 }
 

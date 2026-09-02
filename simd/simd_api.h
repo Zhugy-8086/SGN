@@ -28,6 +28,27 @@
 
 namespace sgn::simd {
 
+// ---- 精度档位（综合执行计划 §二.3 · EPYC 9K65 复核问题 ④）----
+// 每个可调度原语属于一个精度类别，供上层在跨后端可复现/断点续训场景查询：
+//   - kBitExact：与标量锚点逐位一致（结果与后端无关）。整型原语（dot 系 / reverse /
+//     batch_reverse / decode 系）恒属此类——整数累加可交换/结合，SIMD 展开不改变结果。
+//   - kRounding：浮点归约有舍入级差异（结果依赖后端累加器路数与顺序）。SIMD 后端
+//     （avx2/avx512 的 sum 系多路累加器 + 水平归约）与标量锚点（逐序累加）非逐位一致，
+//     SIMD 通常更准但仍属 kRounding；多后端混用会导致训练/断点结果轻微漂移。
+// 查询入口 primitive_precision_class(Id)：Id 见下方枚举，返回精度类别（后端无关）。
+// 保守口径：浮点归约原语无论当前后端统一声明 kRounding（标量桩是 bit-exact 参照，
+// 但作为"低档回退"其数值与 SIMD 后端不同，跨后端可复现需以后端为准）；整型原语
+// 无论后端统一 kBitExact（整数累加可交换/结合，SIMD 展开不改变结果）。
+enum class PrimitiveId {
+    Dot16, Dot8, Dot4,          // 整型点积 → kBitExact
+    DecodeI16, DecodeI16Packed, // 整数解码 → kBitExact
+    Reverse, BatchReverse,      // 字节重排 → kBitExact
+    Sum, SumSqDev, SumSumprod,  // float 归约 → kRounding
+    Accum,                      // float 累加 → kRounding
+};
+enum class PrecisionClass { kBitExact, kRounding };
+PrecisionClass primitive_precision_class(PrimitiveId id) noexcept;
+
 // ---- 整型点积原语（源：msint/split_dot.cpp；Step 1 迁移）----
 
 // int16[K] × int16[K] → int64 精确点积。
@@ -38,14 +59,19 @@ namespace sgn::simd {
 //   bit-exact：整数加法可交换/结合，累加顺序不影响结果。
 int64_t dot16(const int16_t* a, const int16_t* b, size_t K);
 
-// uint8[K] × int8[K] → int64 精确点积。
-//   AVX-VNNI 实现（simd/x86/avxvnni.cpp）：vpdpbusd 直接 int32 精确累加
-//   （禁 maddubs_epi16：255*128 pair 和饱和，与 hc8_net.c 既有结论一致）。
+// uint8[K] × int8[K] → int64 精确点积。后端选择链：
+//   scalar → avx2(vpmaddubsw 中间档, 2026-09-02 新增) → avx_vnni(vpdpbusd) → avx512vnni
+//   - AVX2 中间档（avx2_dot.cpp）：u8×s8→dot8_avx2，a≤127 批 vpmaddubsw 安全全速，
+//     含 ≥128 批 cvtep8+madd_epi16 精确回退（综合执行计划 §一）。bit-exact。
+//   - AVX-VNNI（avxvnni.cpp）：vpdpbusd 直接 int32 精确累加
+//     （禁裸用 maddubs_epi16：255*128 pair 和饱和破坏 bit-exact）。
 //   bit-exact。
 int64_t dot8(const uint8_t* a, const int8_t* b, size_t K);
 
-// 4 位预解包点积：u8[K](uint8) × s8[K](int8) → int64（纯 dpbusd 热路径）。
-//   与 dot8 同实现载体（avxvnni.cpp），语义等价于逐元素 u8×s8 求和。bit-exact。
+// 4 位预解包点积：u8[K](uint8) × s8[K](int8) → int64。与 dot8 同实现载体
+// （avx2_dot.cpp / avxvnni.cpp / avx512vnni.cpp），语义等价逐元素 u8×s8 求和。
+// 注意：dot4 不负责 nibble 解包——输入须已由 unpack_nibble_u/s 预解包为满宽字节
+// （解包在 4 位路径由调用方负责，故 dot4 与 dot8 同实现而非自带 4 位特化）。bit-exact。
 int64_t dot4(const uint8_t* u8, const int8_t* s8, size_t K);
 
 // ---- nibble 字节解包（平台无关标量语义，simd/scalar.cpp 常驻；供 prepare_nibble 复用）----
@@ -64,6 +90,15 @@ void unpack_nibble_s(const uint8_t* ss_p, size_t K, int8_t* s8);
 //   AVX2 实现（x86/avx2.cpp）：SSSE3 PSHUFB+PALIGNR+PMOVSXWD 热路径；AVX2 原始路径回退。
 //   标量锚点在 scalar.cpp（非 AVX2 平台）。float 乘 scale 用 mul 不融合，与标量逐位一致。
 void decode_i16_f32(const uint64_t* pv_ptr, int n_values, float scale, float* res_ptr);
+
+// 连续 int16 解码（布局优化，综合执行计划 §二.5；EPYC 9K65 复核问题 ①）：
+//   src[i] = 连续 int16（每 16 位 1 个有效值，无 uint64 的 48 位填充），
+//   res[i] = float(src[i]) * scale。
+// 与 decode_i16_f32（uint64 每 8 字节仅 16 位有效 → 4× 带宽浪费）相比，本原语输入
+// 连续布局，内存带宽利用 100%——是问题 ① 的正解（改上层布局）。实现于
+// x86/avx2_decode.cpp（AVX2 宽读 + cvtepi16_epi32 + cvtepi32_ps，标量尾部）；
+// 非 AVX2 平台由调用方落到标量循环（scalar.cpp 提供 decode_i16_f32_packed16_scalar，见注）。
+void decode_i16_f32_packed16(const int16_t* src, int n_values, float scale, float* res_ptr);
 
 // 反转 packed 的低 n 字节（n ∈ [1,8]）到 out[0..n-1]：out[i] = (packed >> (8*(n-1-i))) & 0xFF。
 //   SSSE3 实现（x86/ssse3.cpp）：单 128 位 PSHUFB。标量锚点在 scalar.cpp。bit-exact。

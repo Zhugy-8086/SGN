@@ -41,7 +41,9 @@ BUILD_DIR="$SCRIPT_DIR/build"
 SRCS=(
     scalar.cpp
     simd_dispatch.cpp
-    x86/avx2.cpp
+    x86/avx2_dot.cpp
+    x86/avx2_decode.cpp
+    x86/avx2_reduce.cpp
     x86/avxvnni.cpp
     x86/ssse3.cpp
     x86/avx512.cpp
@@ -98,7 +100,9 @@ BASE_FLAGS="$BASE_FLAGS ${EXTRA_FLAGS:-}"
 # ---- 文件级 ISA 选项（阶段 1，与 CMakeLists.txt set_source_files_properties 一致）----
 # dispatch/scalar/neon/测试：基础编译（无 AVX 宏），dispatch 全走运行时 CPUID。
 declare -A FILE_FLAGS
-FILE_FLAGS[x86/avx2.cpp]="-mavx2"
+FILE_FLAGS[x86/avx2_dot.cpp]="-mavx2"
+FILE_FLAGS[x86/avx2_decode.cpp]="-mavx2"
+FILE_FLAGS[x86/avx2_reduce.cpp]="-mavx2"
 FILE_FLAGS[x86/avxvnni.cpp]="-mavx2 -mavxvnni"
 FILE_FLAGS[x86/ssse3.cpp]="-mssse3 -mavx2"
 FILE_FLAGS[x86/avx512.cpp]="-mavx512f -mavx512bw -mavx512vl"

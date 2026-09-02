@@ -40,7 +40,9 @@ add_compile_options(-O3)
 add_executable(simd_boundary_test
     scalar.cpp
     simd_dispatch.cpp
-    x86/avx2.cpp
+    x86/avx2_dot.cpp
+    x86/avx2_decode.cpp
+    x86/avx2_reduce.cpp
     x86/avxvnni.cpp
     x86/ssse3.cpp
     x86/avx512.cpp
@@ -53,13 +55,15 @@ add_executable(simd_boundary_test
 target_include_directories(simd_boundary_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
 # per-file ISA（阶段 1 纪律，与 engine/sgn/CMakeLists.txt set_source_files_properties 一致）：
-#   avx2.cpp        → -mavx2
+#   avx2_dot.cpp / avx2_decode / avx2_reduce → -mavx2（avx2.cpp 2026-09-02 按域拆分）
 #   avxvnni.cpp     → -mavx2 -mavxvnni
 #   ssse3.cpp       → -mssse3 -mavx2   （reverse 用 SSSE3；batch 用 _mm256_shuffle_epi8 需 AVX2）
 #   avx512.cpp      → -mavx512f -mavx512bw -mavx512vl
 #   avx512vnni.cpp  → 同上 + -mavx512vnni
 set_source_files_properties(
-    x86/avx2.cpp
+    x86/avx2_dot.cpp
+    x86/avx2_decode.cpp
+    x86/avx2_reduce.cpp
     PROPERTIES COMPILE_OPTIONS "-mavx2")
 set_source_files_properties(
     x86/avxvnni.cpp
@@ -85,7 +89,9 @@ set_source_files_properties(
 add_executable(sgn_benchmark
     scalar.cpp
     simd_dispatch.cpp
-    x86/avx2.cpp
+    x86/avx2_dot.cpp
+    x86/avx2_decode.cpp
+    x86/avx2_reduce.cpp
     x86/avxvnni.cpp
     x86/ssse3.cpp
     x86/avx512.cpp

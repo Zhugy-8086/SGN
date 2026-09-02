@@ -1,12 +1,15 @@
-// ssse3.cpp - SSSE3/AVX2 原语实现（__SSSE3__）
+// ssse3.cpp - SSSE3/AVX2 原语实现（__SSSE3__；batch_reverse_u8 实需 AVX2）
 //
 // 背景：fixes_相关修复/simd指令集加速文件拆分计划_2026_08_29.md
 // Step 2：sgn::simd::reverse_bytes8 / batch_reverse_u8 由 msint/packed_backend.cpp 的
 // get_all_simd_8bit_unsigned_ / batch_get_all SSSE3 分支迁移。
 //
-// 注意：当前构建全局 -mavx2（CMakeLists.txt），本文件仅在 __SSSE3__ 下编译。
+// 注意（综合执行计划 §二.4，命名澄清）：本文件名为 ssse3，但两个函数指令集需求不同：
 //   - reverse_bytes8 仅需 128 位 PSHUFB（真 SSSE3）；
-//   - batch_reverse_u8 用 _mm256_*（实际需 AVX2，与迁移前 packed_backend.cpp 一致）。
+//   - batch_reverse_u8_ssse3 用 _mm256_shuffle_epi8（**实需 AVX2**，256 位指令）。
+// 当前 CMake 给本文件 -mssse3 -mavx2（batch 路径已含 AVX2），编译正确。
+// 命名保留以便追溯迁移历史；若未来做"严格 SSSE3 构建"需将 batch 拆入 avx2_reduce 类
+// 文件——本轮因 batch 仅一函数且与 reverse 同源，未单独拆（见综合执行计划）。
 // 非 SSSE3/非 x86 平台由 simd/scalar.cpp 提供标量锚点，无重复符号。
 
 #include "simd/simd_api.h"

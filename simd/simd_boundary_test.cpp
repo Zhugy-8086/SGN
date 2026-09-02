@@ -29,6 +29,13 @@ float sum_f32_scalar(const float*, int64_t, int64_t);
 float sum_sq_dev_f32_scalar(const float*, int64_t, int64_t, float);
 void sum_sumprod_f32_scalar(const float*, const float*, int64_t, int64_t, float*, float*);
 void accum_f32_scalar(float*, const float*, int64_t);
+// AVX2 中间档（avx2_dot.cpp，综合执行计划 §一）——定点直测（绕开 dispatch 的 vnni
+// 优先级），验证 vpmaddubsw 中间档的饱和边界位 bit-exact。
+int64_t dot8_avx2(const uint8_t*, const int8_t*, size_t);
+int64_t dot4_avx2(const uint8_t*, const int8_t*, size_t);
+// 连续 int16 解码（avx2_decode.cpp AVX2 + scalar.cpp 标量锚点，布局优化）——定点直测
+void decode_i16_f32_packed16(const int16_t*, int, float, float*);
+void decode_i16_f32_packed16_scalar(const int16_t*, int, float, float*);
 }
 
 static int failures = 0;
@@ -87,6 +94,55 @@ static void test_dot8_dot4() {
     }
 }
 
+// AVX2 中间档饱和对抗专项（综合执行计划 §一，2026-09-02）：
+// 直接调 dot8_avx2 / dot4_avx2（绕开 dispatch 的 vnni 优先级），验证 vpmaddubsw
+// 中间档在饱和边界位的 bit-exact：
+//   - a 全 ≤127（对和 ≤ 32258 < 32768 永不饱和）→ maddubs 全速路径
+//   - a 含 ≥128（触发 cvtep8+madd_epi16 精确回退路径）
+//   - 批内混排触发饱和 vs 接近不饱和
+static void test_dot8_avx2_mid() {
+    // 用例组：每元素 a/b 由"饱和触发源"决定
+    //   0: 普通随机（走 maddubs 安全路径）
+    //   1: a=127 b=127（对和 32258，接近但不饱和的上界——maddubs 路径正确）
+    //   2: a=255 b=127（对和 64770 > 32767，maddubs 饱和 → 必须走精确回退）
+    //   3: a=255 b=-128（对和 -65280，负饱和 → 精确回退）
+    //   4: a 含 128（边界：对和 128*127*2=32512 < 32768 仍安全，但 a≥128 触发回退路径）
+    for (size_t K : {0u, 1u, 31u, 32u, 33u, 63u, 64u, 65u, 1000u}) {
+        std::vector<uint8_t> u(K);
+        std::vector<int8_t> s(K);
+        for (size_t i = 0; i < K; ++i) {
+            switch (i % 5) {
+                case 0:
+                    u[i] = static_cast<uint8_t>(rng() % 128);  // 0..127
+                    s[i] = static_cast<int8_t>(rng() % 256);
+                    break;
+                case 1: u[i] = 127; s[i] = 127; break;   // 近饱和上界，maddubs 安全
+                case 2: u[i] = 255; s[i] = 127; break;   // 正饱和，须回退
+                case 3: u[i] = 255; s[i] = -128; break;  // 负饱和，须回退
+                case 4: u[i] = 128; s[i] = 127; break;   // a=128 触发回退，但对和仍安全
+            }
+        }
+        CHECK(dot8_avx2(u.data(), s.data(), K) == dot8_scalar(u.data(), s.data(), K),
+              "dot8_avx2 mid vs scalar mismatch");
+        CHECK(dot4_avx2(u.data(), s.data(), K) == dot4_scalar(u.data(), s.data(), K),
+              "dot4_avx2 mid vs scalar mismatch");
+    }
+    // 全 a=127 b=127（整段 maddubs 安全路径，对和固定在 32258）
+    {
+        std::vector<uint8_t> u(256, 127);
+        std::vector<int8_t> s(256, 127);
+        CHECK(dot8_avx2(u.data(), s.data(), 256) == dot8_scalar(u.data(), s.data(), 256),
+              "dot8_avx2 all-safe mismatch");
+    }
+    // 全 a=255 b=127（整段饱和 → 全回退精确路径）
+    {
+        std::vector<uint8_t> u(256, 255);
+        std::vector<int8_t> s(256, 127);
+        CHECK(dot8_avx2(u.data(), s.data(), 256) == dot8_scalar(u.data(), s.data(), 256),
+              "dot8_avx2 all-sat mismatch");
+    }
+}
+
 static void test_decode() {
     for (int n : {0, 1, 3, 7, 8, 9, 15, 16, 100}) {
         std::vector<uint64_t> pv(n);
@@ -102,6 +158,23 @@ static void test_decode() {
         // 2026-09-02 远程复核 EPYC 9K65 报告问题 2）→ n>0 才比较
         CHECK(n == 0 || std::memcmp(r1.data(), r2.data(), sizeof(float) * n) == 0,
               "decode_i16_f32 SIMD vs scalar mismatch");
+    }
+}
+
+static void test_decode_packed16() {
+    // 连续 int16 布局解码：尺寸扫描 + 满幅/负边界，AVX2 版 vs 标量锚点逐位一致
+    for (int n : {0, 1, 3, 7, 8, 9, 15, 16, 100}) {
+        std::vector<int16_t> src(n);
+        for (int i = 0; i < n; ++i) {
+            src[i] = static_cast<int16_t>(rng() % 65536 - 32768);
+            if (i % 3 == 0) src[i] = INT16_MIN;  // 负边界
+            if (i % 5 == 0) src[i] = INT16_MAX;  // 正满幅
+        }
+        std::vector<float> r1(n), r2(n);
+        decode_i16_f32_packed16(src.data(), n, 0.25f, r1.data());
+        decode_i16_f32_packed16_scalar(src.data(), n, 0.25f, r2.data());
+        CHECK(n == 0 || std::memcmp(r1.data(), r2.data(), sizeof(float) * n) == 0,
+              "decode_i16_f32_packed16 AVX2 vs scalar mismatch");
     }
 }
 
@@ -175,6 +248,23 @@ static void test_backend_name() {
     const char* n = active_backend_name();
     std::printf("active backend: %s\n", n);
     CHECK(n != nullptr, "backend name null");
+}
+
+// 精度档位查询回归（综合执行计划 §二.3）：整型/字节原语 kBitExact、float 归约 kRounding
+static void test_precision_classes() {
+    using P = PrecisionClass;
+    CHECK(primitive_precision_class(PrimitiveId::Dot16) == P::kBitExact, "dot16 class");
+    CHECK(primitive_precision_class(PrimitiveId::Dot8)  == P::kBitExact, "dot8 class");
+    CHECK(primitive_precision_class(PrimitiveId::Dot4)  == P::kBitExact, "dot4 class");
+    CHECK(primitive_precision_class(PrimitiveId::DecodeI16) == P::kBitExact, "decode class");
+    CHECK(primitive_precision_class(PrimitiveId::DecodeI16Packed) == P::kBitExact, "decode16 packed class");
+    CHECK(primitive_precision_class(PrimitiveId::Reverse) == P::kBitExact, "reverse class");
+    CHECK(primitive_precision_class(PrimitiveId::BatchReverse) == P::kBitExact, "batch class");
+    CHECK(primitive_precision_class(PrimitiveId::Sum) == P::kRounding, "sum class");
+    CHECK(primitive_precision_class(PrimitiveId::SumSqDev) == P::kRounding, "sumsq class");
+    CHECK(primitive_precision_class(PrimitiveId::SumSumprod) == P::kRounding, "sumsumprod class");
+    CHECK(primitive_precision_class(PrimitiveId::Accum) == P::kRounding, "accum class");
+    std::printf("precision classes verified\n");
 }
 
 // ----------------------------------------------------------------------------
@@ -288,10 +378,13 @@ static void test_cpuid_caps() {
 int main() {
     test_dot16();
     test_dot8_dot4();
+    test_dot8_avx2_mid();
     test_decode();
+    test_decode_packed16();
     test_reverse();
     test_sum_series();
     test_backend_name();
+    test_precision_classes();
     test_cpuid_caps();
     if (failures == 0) {
         std::printf("ALL BOUNDARY TESTS PASSED\n");

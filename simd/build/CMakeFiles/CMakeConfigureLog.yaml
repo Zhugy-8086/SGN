@@ -54,6 +54,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -197,6 +198,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -251,6 +253,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -341,6 +344,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -373,6 +377,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -421,6 +426,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -453,6 +459,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -501,6 +508,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -533,6 +541,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -581,6 +590,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -613,6 +623,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -661,6 +672,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -693,6 +705,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -741,6 +754,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -773,6 +787,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -821,6 +836,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -853,6 +869,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -901,6 +918,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -933,6 +951,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -981,6 +1000,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -1013,6 +1033,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -1061,6 +1082,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -1093,6 +1115,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -1140,6 +1163,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -1218,6 +1242,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/tapi.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/tapi.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/tapi"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/tapi.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/tapi.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/tapi"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/tapi.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/tapi.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/tapi"
@@ -1252,6 +1279,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -1302,6 +1330,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -1380,6 +1409,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar-22.1.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar-22.1.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar-22.1"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar-22.1.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar-22.1.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar-22.1"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar-22.1.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar-22.1.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar-22.1"
@@ -1461,6 +1493,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar-22.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar-22.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar-22"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar-22.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar-22.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar-22"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar-22.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar-22.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar-22"
@@ -1542,6 +1577,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar22.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar22.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ar22"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar22.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar22.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ar22"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar22.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar22.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ar22"
@@ -1577,6 +1615,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -1627,6 +1666,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -1705,6 +1745,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib-22.1.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib-22.1.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib-22.1"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib-22.1.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib-22.1.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib-22.1"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib-22.1.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib-22.1.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib-22.1"
@@ -1786,6 +1829,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib-22.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib-22.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib-22"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib-22.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib-22.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib-22"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib-22.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib-22.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib-22"
@@ -1867,6 +1913,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib22.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib22.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/llvm-ranlib22"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib22.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib22.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/llvm-ranlib22"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib22.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib22.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/llvm-ranlib22"
@@ -1902,6 +1951,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -1956,6 +2006,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
     searched_directories:
@@ -2034,6 +2085,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps-22.1.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps-22.1.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps-22.1"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps-22.1.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps-22.1.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps-22.1"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps-22.1.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps-22.1.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps-22.1"
@@ -2115,6 +2169,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps-22.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps-22.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps-22"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps-22.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps-22.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps-22"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps-22.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps-22.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps-22"
@@ -2196,6 +2253,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps22.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps22.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/clang-scan-deps22"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps22.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps22.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/clang-scan-deps22"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps22.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps22.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/clang-scan-deps22"
@@ -2231,6 +2291,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
   -
@@ -2279,6 +2340,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
       - "C:/Program Files/bin/"
@@ -2369,6 +2431,9 @@ events:
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/rc.com"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/rc.exe"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/rc"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/rc.com"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/rc.exe"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/rc"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/rc.com"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/rc.exe"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/rc"
@@ -2439,6 +2504,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
       CMAKE_INSTALL_PREFIX: "C:/Program Files (x86)/sgn_simd_standalone"
@@ -2493,6 +2559,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
       - "C:/Program Files/bin/"
@@ -2597,6 +2664,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
       CMAKE_INSTALL_PREFIX: "C:/Program Files (x86)/sgn_simd_standalone"
@@ -2654,6 +2722,7 @@ events:
       - "C:/kaffj/tcc/tcc/"
       - "D:/QEMU/"
       - "C:/Program Files/WindowsApps/Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe/"
+      - "C:/Program Files (x86)/Microsoft/Edge/Application/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/bin/lib/"
       - "C:/Users/Administrator/AppData/Local/Programs/TRAE SOLO CN/resources/app/node_modules/@vscode/ripgrep/bin/"
       - "C:/Program Files/bin/"
@@ -2758,6 +2827,7 @@ events:
         - "c:\\kaffj\\tcc\\tcc"
         - "D:\\QEMU"
         - "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe"
+        - "C:\\Program Files (x86)\\Microsoft\\Edge\\Application"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\bin\\lib"
         - "c:\\Users\\Administrator\\AppData\\Local\\Programs\\TRAE SOLO CN\\resources\\app\\node_modules\\@vscode\\ripgrep\\bin"
       CMAKE_INSTALL_PREFIX: "C:/Program Files (x86)/sgn_simd_standalone"
@@ -2775,8 +2845,8 @@ events:
     checks:
       - "Detecting CXX compiler ABI info"
     directories:
-      source: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-zqtk5z"
-      binary: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-zqtk5z"
+      source: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-v8q01z"
+      binary: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-v8q01z"
     cmakeVariables:
       CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "C:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/clang-scan-deps.exe"
       CMAKE_CXX_FLAGS: ""
@@ -2788,16 +2858,16 @@ events:
       variable: "CMAKE_CXX_ABI_COMPILED"
       cached: false
       stdout: |
-        Change Dir: 'C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-zqtk5z'
+        Change Dir: 'C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-v8q01z'
         
-        Run Build Command(s): C:/Users/Administrator/AppData/Local/Programs/Python/Python314/Scripts/ninja.exe -v cmTC_d4984
-        [1/2] C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -D_MBCS  -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -MD -MT CMakeFiles/cmTC_d4984.dir/CMakeCXXCompilerABI.cpp.obj -MF CMakeFiles\\cmTC_d4984.dir\\CMakeCXXCompilerABI.cpp.obj.d -o CMakeFiles/cmTC_d4984.dir/CMakeCXXCompilerABI.cpp.obj -c C:/kaffj/cmake/share/cmake-4.4/Modules/CMakeCXXCompilerABI.cpp
-        [2/2] C:\\Windows\\system32\\cmd.exe /C "cd . && C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -nostartfiles -nostdlib -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -v -Xlinker /subsystem:console -fuse-ld=lld CMakeFiles/cmTC_d4984.dir/CMakeCXXCompilerABI.cpp.obj -o cmTC_d4984.exe -Xlinker /MANIFEST:EMBED -Xlinker /implib:cmTC_d4984.lib -Xlinker /pdb:cmTC_d4984.pdb -Xlinker /version:0.0     && cd ."
+        Run Build Command(s): C:/Users/Administrator/AppData/Local/Programs/Python/Python314/Scripts/ninja.exe -v cmTC_b7939
+        [1/2] C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -D_MBCS  -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -MD -MT CMakeFiles/cmTC_b7939.dir/CMakeCXXCompilerABI.cpp.obj -MF CMakeFiles\\cmTC_b7939.dir\\CMakeCXXCompilerABI.cpp.obj.d -o CMakeFiles/cmTC_b7939.dir/CMakeCXXCompilerABI.cpp.obj -c C:/kaffj/cmake/share/cmake-4.4/Modules/CMakeCXXCompilerABI.cpp
+        [2/2] C:\\Windows\\system32\\cmd.exe /C "cd . && C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -nostartfiles -nostdlib -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -v -Xlinker /subsystem:console -fuse-ld=lld CMakeFiles/cmTC_b7939.dir/CMakeCXXCompilerABI.cpp.obj -o cmTC_b7939.exe -Xlinker /MANIFEST:EMBED -Xlinker /implib:cmTC_b7939.lib -Xlinker /pdb:cmTC_b7939.pdb -Xlinker /version:0.0     && cd ."
         clang version 22.1.8 (https://github.com/llvm/llvm-project ca7933e47d3a3451d81e72ac174dcb5aa28b59d1)
         Target: x86_64-pc-windows-msvc
         Thread model: posix
         InstalledDir: C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin
-         "C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\bin\\\\lld-link" -out:cmTC_d4984.exe "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\atlmfc\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\ucrt\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\um\\\\x64" "-libpath:C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\lib\\\\clang\\\\22\\\\lib\\\\windows" -nologo -debug /subsystem:console CMakeFiles/cmTC_d4984.dir/CMakeCXXCompilerABI.cpp.obj /MANIFEST:EMBED /implib:cmTC_d4984.lib /pdb:cmTC_d4984.pdb /version:0.0
+         "C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\bin\\\\lld-link" -out:cmTC_b7939.exe "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\atlmfc\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\ucrt\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\um\\\\x64" "-libpath:C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\lib\\\\clang\\\\22\\\\lib\\\\windows" -nologo -debug /subsystem:console CMakeFiles/cmTC_b7939.dir/CMakeCXXCompilerABI.cpp.obj /MANIFEST:EMBED /implib:cmTC_b7939.lib /pdb:cmTC_b7939.pdb /version:0.0
         
       exitCode: 0
   -
@@ -2810,7 +2880,7 @@ events:
       Parsed CXX implicit link information:
         link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
         linker tool regex: [^[ 	]*(->|"|[0-9]+>[ 	-]*Build:[ 	0-9]+ ms[ 	]*)?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|link\\.exe|lld-link(\\.exe)?))("|,| |$)]
-        link line: [ "C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\bin\\\\lld-link" -out:cmTC_d4984.exe "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\atlmfc\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\ucrt\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\um\\\\x64" "-libpath:C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\lib\\\\clang\\\\22\\\\lib\\\\windows" -nologo -debug /subsystem:console CMakeFiles/cmTC_d4984.dir/CMakeCXXCompilerABI.cpp.obj /MANIFEST:EMBED /implib:cmTC_d4984.lib /pdb:cmTC_d4984.pdb /version:0.0] ==> linker [C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\bin\\\\lld-link]
+        link line: [ "C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\bin\\\\lld-link" -out:cmTC_b7939.exe "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\atlmfc\\\\lib\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\ucrt\\\\x64" "-libpath:C:\\\\Program Files (x86)\\\\Windows Kits\\\\10\\\\Lib\\\\10.0.26100.0\\\\um\\\\x64" "-libpath:C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\lib\\\\clang\\\\22\\\\lib\\\\windows" -nologo -debug /subsystem:console CMakeFiles/cmTC_b7939.dir/CMakeCXXCompilerABI.cpp.obj /MANIFEST:EMBED /implib:cmTC_b7939.lib /pdb:cmTC_b7939.pdb /version:0.0] ==> linker [C:\\\\kaffj\\\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\\\bin\\\\lld-link]
         linker tool for 'CXX': C:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/lld-link 
         implicit libs: []
         implicit objs: []
@@ -2862,8 +2932,8 @@ events:
     checks:
       - "Detecting CXX compile features"
     directories:
-      source: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-khep7u"
-      binary: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-khep7u"
+      source: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-g9c7ab"
+      binary: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-g9c7ab"
     cmakeVariables:
       CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "C:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/clang-scan-deps.exe"
       CMAKE_CXX_FLAGS: ""
@@ -2874,11 +2944,11 @@ events:
       variable: "CMAKE_CXX_FEATURE_TEST"
       cached: false
       stdout: |
-        Change Dir: 'C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-khep7u'
+        Change Dir: 'C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-g9c7ab'
         
-        Run Build Command(s): C:/Users/Administrator/AppData/Local/Programs/Python/Python314/Scripts/ninja.exe -v cmTC_32bdc
-        [1/2] C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -D_MBCS  -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd   -std=c++14 -MD -MT CMakeFiles/cmTC_32bdc.dir/feature_tests.cxx.obj -MF CMakeFiles\\cmTC_32bdc.dir\\feature_tests.cxx.obj.d -o CMakeFiles/cmTC_32bdc.dir/feature_tests.cxx.obj -c C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-khep7u/feature_tests.cxx
-        [2/2] C:\\Windows\\system32\\cmd.exe /C "cd . && C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -nostartfiles -nostdlib -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -Xlinker /subsystem:console -fuse-ld=lld CMakeFiles/cmTC_32bdc.dir/feature_tests.cxx.obj -o cmTC_32bdc.exe -Xlinker /MANIFEST:EMBED -Xlinker /implib:cmTC_32bdc.lib -Xlinker /pdb:cmTC_32bdc.pdb -Xlinker /version:0.0   -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -loldnames  && cd ."
+        Run Build Command(s): C:/Users/Administrator/AppData/Local/Programs/Python/Python314/Scripts/ninja.exe -v cmTC_d848c
+        [1/2] C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -D_MBCS  -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd   -std=c++14 -MD -MT CMakeFiles/cmTC_d848c.dir/feature_tests.cxx.obj -MF CMakeFiles\\cmTC_d848c.dir\\feature_tests.cxx.obj.d -o CMakeFiles/cmTC_d848c.dir/feature_tests.cxx.obj -c C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-g9c7ab/feature_tests.cxx
+        [2/2] C:\\Windows\\system32\\cmd.exe /C "cd . && C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -nostartfiles -nostdlib -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -Xlinker /subsystem:console -fuse-ld=lld CMakeFiles/cmTC_d848c.dir/feature_tests.cxx.obj -o cmTC_d848c.exe -Xlinker /MANIFEST:EMBED -Xlinker /implib:cmTC_d848c.lib -Xlinker /pdb:cmTC_d848c.pdb -Xlinker /version:0.0   -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -loldnames  && cd ."
         
       exitCode: 0
   -
@@ -2893,8 +2963,8 @@ events:
     checks:
       - "Detecting CXX compile features"
     directories:
-      source: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-ykg2j9"
-      binary: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-ykg2j9"
+      source: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-7a630q"
+      binary: "C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-7a630q"
     cmakeVariables:
       CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "C:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/clang-scan-deps.exe"
       CMAKE_CXX_FLAGS: ""
@@ -2905,11 +2975,11 @@ events:
       variable: "CMAKE_CXX_FEATURE_TEST"
       cached: false
       stdout: |
-        Change Dir: 'C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-ykg2j9'
+        Change Dir: 'C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-7a630q'
         
-        Run Build Command(s): C:/Users/Administrator/AppData/Local/Programs/Python/Python314/Scripts/ninja.exe -v cmTC_828e2
-        [1/2] C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -D_MBCS  -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd   -std=c++14 -MD -MT CMakeFiles/cmTC_828e2.dir/feature_tests.cxx.obj -MF CMakeFiles\\cmTC_828e2.dir\\feature_tests.cxx.obj.d -o CMakeFiles/cmTC_828e2.dir/feature_tests.cxx.obj -c C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-ykg2j9/feature_tests.cxx
-        [2/2] C:\\Windows\\system32\\cmd.exe /C "cd . && C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -nostartfiles -nostdlib -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -Xlinker /subsystem:console -fuse-ld=lld CMakeFiles/cmTC_828e2.dir/feature_tests.cxx.obj -o cmTC_828e2.exe -Xlinker /MANIFEST:EMBED -Xlinker /implib:cmTC_828e2.lib -Xlinker /pdb:cmTC_828e2.pdb -Xlinker /version:0.0   -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -loldnames  && cd ."
+        Run Build Command(s): C:/Users/Administrator/AppData/Local/Programs/Python/Python314/Scripts/ninja.exe -v cmTC_368dc
+        [1/2] C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -D_MBCS  -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd   -std=c++14 -MD -MT CMakeFiles/cmTC_368dc.dir/feature_tests.cxx.obj -MF CMakeFiles\\cmTC_368dc.dir\\feature_tests.cxx.obj.d -o CMakeFiles/cmTC_368dc.dir/feature_tests.cxx.obj -c C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/CMakeScratch/TryCompile-7a630q/feature_tests.cxx
+        [2/2] C:\\Windows\\system32\\cmd.exe /C "cd . && C:\\kaffj\\clang+llvm-22.1.8-x86_64-pc-windows-msvc\\bin\\clang++.exe -nostartfiles -nostdlib -O0 -g -Xclang -gcodeview -D_DEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrtd -Xlinker /subsystem:console -fuse-ld=lld CMakeFiles/cmTC_368dc.dir/feature_tests.cxx.obj -o cmTC_368dc.exe -Xlinker /MANIFEST:EMBED -Xlinker /implib:cmTC_368dc.lib -Xlinker /pdb:cmTC_368dc.pdb -Xlinker /version:0.0   -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -loldnames  && cd ."
         
       exitCode: 0
 ...

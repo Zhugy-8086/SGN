@@ -71,9 +71,31 @@ build CMakeFiles/simd_boundary_test.dir/simd_dispatch.cpp.obj: CXX_COMPILER__sim
   TARGET_PDB = simd_boundary_test.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\simd_boundary_test.dir
 
-build CMakeFiles/simd_boundary_test.dir/x86/avx2.cpp.obj: CXX_COMPILER__simd_boundary_test_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2.cpp || cmake_object_order_depends_target_simd_boundary_test
+build CMakeFiles/simd_boundary_test.dir/x86/avx2_dot.cpp.obj: CXX_COMPILER__simd_boundary_test_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2_dot.cpp || cmake_object_order_depends_target_simd_boundary_test
   CONFIG = Release
-  DEP_FILE = CMakeFiles\simd_boundary_test.dir\x86\avx2.cpp.obj.d
+  DEP_FILE = CMakeFiles\simd_boundary_test.dir\x86\avx2_dot.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\simd_boundary_test.dir
+  OBJECT_FILE_DIR = CMakeFiles\simd_boundary_test.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\simd_boundary_test.dir\
+  TARGET_PDB = simd_boundary_test.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\simd_boundary_test.dir
+
+build CMakeFiles/simd_boundary_test.dir/x86/avx2_decode.cpp.obj: CXX_COMPILER__simd_boundary_test_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2_decode.cpp || cmake_object_order_depends_target_simd_boundary_test
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\simd_boundary_test.dir\x86\avx2_decode.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\simd_boundary_test.dir
+  OBJECT_FILE_DIR = CMakeFiles\simd_boundary_test.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\simd_boundary_test.dir\
+  TARGET_PDB = simd_boundary_test.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\simd_boundary_test.dir
+
+build CMakeFiles/simd_boundary_test.dir/x86/avx2_reduce.cpp.obj: CXX_COMPILER__simd_boundary_test_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2_reduce.cpp || cmake_object_order_depends_target_simd_boundary_test
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\simd_boundary_test.dir\x86\avx2_reduce.cpp.obj.d
   FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2
   INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
   OBJECT_DIR = CMakeFiles\simd_boundary_test.dir
@@ -156,7 +178,7 @@ build CMakeFiles/simd_boundary_test.dir/simd_boundary_test.cpp.obj: CXX_COMPILER
 #############################################
 # Link the executable simd_boundary_test.exe
 
-build simd_boundary_test.exe: CXX_EXECUTABLE_LINKER__simd_boundary_test_Release CMakeFiles/simd_boundary_test.dir/scalar.cpp.obj CMakeFiles/simd_boundary_test.dir/simd_dispatch.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx2.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avxvnni.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/ssse3.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx512.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx512vnni.cpp.obj CMakeFiles/simd_boundary_test.dir/arm/neon.cpp.obj CMakeFiles/simd_boundary_test.dir/simd_boundary_test.cpp.obj
+build simd_boundary_test.exe: CXX_EXECUTABLE_LINKER__simd_boundary_test_Release CMakeFiles/simd_boundary_test.dir/scalar.cpp.obj CMakeFiles/simd_boundary_test.dir/simd_dispatch.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx2_dot.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx2_decode.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx2_reduce.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avxvnni.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/ssse3.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx512.cpp.obj CMakeFiles/simd_boundary_test.dir/x86/avx512vnni.cpp.obj CMakeFiles/simd_boundary_test.dir/arm/neon.cpp.obj CMakeFiles/simd_boundary_test.dir/simd_boundary_test.cpp.obj
   CONFIG = Release
   FLAGS = -O3 -DNDEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrt
   LINK_FLAGS = -Xlinker /subsystem:console -fuse-ld=lld
@@ -169,6 +191,158 @@ build simd_boundary_test.exe: CXX_EXECUTABLE_LINKER__simd_boundary_test_Release 
   TARGET_IMPLIB = simd_boundary_test.lib
   TARGET_PDB = simd_boundary_test.pdb
   TARGET_SUPPORT_DIR = CMakeFiles\simd_boundary_test.dir
+
+# =============================================================================
+# Object build statements for EXECUTABLE target sgn_benchmark
+
+
+#############################################
+# Order-only phony target for sgn_benchmark
+
+build cmake_object_order_depends_target_sgn_benchmark: phony || .
+
+build CMakeFiles/sgn_benchmark.dir/scalar.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/scalar.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\scalar.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/simd_dispatch.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/simd_dispatch.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\simd_dispatch.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/avx2_dot.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2_dot.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\avx2_dot.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/avx2_decode.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2_decode.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\avx2_decode.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/avx2_reduce.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx2_reduce.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\avx2_reduce.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/avxvnni.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avxvnni.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\avxvnni.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx2 -mavxvnni
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/ssse3.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/ssse3.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\ssse3.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mssse3 -mavx2
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/avx512.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx512.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\avx512.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx512f -mavx512bw -mavx512vl
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/x86/avx512vnni.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/x86/avx512vnni.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\x86\avx512vnni.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3 -mavx512f -mavx512bw -mavx512vl -mavx512vnni
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\x86
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/arm/neon.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/arm/neon.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\arm\neon.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir\arm
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+build CMakeFiles/sgn_benchmark.dir/sgn_benchmark.cpp.obj: CXX_COMPILER__sgn_benchmark_unscanned_Release C$:/code/mimo-test/SGN/engine/sgn/simd/sgn_benchmark.cpp || cmake_object_order_depends_target_sgn_benchmark
+  CONFIG = Release
+  DEP_FILE = CMakeFiles\sgn_benchmark.dir\sgn_benchmark.cpp.obj.d
+  FLAGS = -O3 -DNDEBUG -std=c++23 -D_DLL -D_MT -Xclang --dependent-lib=msvcrt -O3
+  INCLUDES = -IC:/code/mimo-test/SGN/engine/sgn/simd/..
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  OBJECT_FILE_DIR = CMakeFiles\sgn_benchmark.dir
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
+
+
+# =============================================================================
+# Link build statements for EXECUTABLE target sgn_benchmark
+
+
+#############################################
+# Link the executable sgn_benchmark.exe
+
+build sgn_benchmark.exe: CXX_EXECUTABLE_LINKER__sgn_benchmark_Release CMakeFiles/sgn_benchmark.dir/scalar.cpp.obj CMakeFiles/sgn_benchmark.dir/simd_dispatch.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/avx2_dot.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/avx2_decode.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/avx2_reduce.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/avxvnni.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/ssse3.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/avx512.cpp.obj CMakeFiles/sgn_benchmark.dir/x86/avx512vnni.cpp.obj CMakeFiles/sgn_benchmark.dir/arm/neon.cpp.obj CMakeFiles/sgn_benchmark.dir/sgn_benchmark.cpp.obj
+  CONFIG = Release
+  FLAGS = -O3 -DNDEBUG -D_DLL -D_MT -Xclang --dependent-lib=msvcrt
+  LINK_FLAGS = -Xlinker /subsystem:console -fuse-ld=lld
+  LINK_LIBRARIES = -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 -loldnames
+  OBJECT_DIR = CMakeFiles\sgn_benchmark.dir
+  POST_BUILD = cd .
+  PRE_LINK = cd .
+  TARGET_COMPILE_PDB = CMakeFiles\sgn_benchmark.dir\
+  TARGET_FILE = sgn_benchmark.exe
+  TARGET_IMPLIB = sgn_benchmark.lib
+  TARGET_PDB = sgn_benchmark.pdb
+  TARGET_SUPPORT_DIR = CMakeFiles\sgn_benchmark.dir
 
 
 #############################################
@@ -197,6 +371,8 @@ build rebuild_cache: phony CMakeFiles/rebuild_cache.util
 # =============================================================================
 # Target aliases.
 
+build sgn_benchmark: phony sgn_benchmark.exe
+
 build simd_boundary_test: phony simd_boundary_test.exe
 
 # =============================================================================
@@ -207,7 +383,7 @@ build simd_boundary_test: phony simd_boundary_test.exe
 #############################################
 # Folder: C:/code/mimo-test/SGN/engine/sgn/simd/build
 
-build all: phony simd_boundary_test.exe
+build all: phony simd_boundary_test.exe sgn_benchmark.exe
 
 # =============================================================================
 # Built-in targets

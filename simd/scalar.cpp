@@ -61,6 +61,13 @@ void decode_i16_f32_scalar(const uint64_t* pv_ptr, int n_values, float scale, fl
     }
 }
 
+// 连续 int16 解码标量锚点（非 AVX2 平台回退；与 avx2_decode.cpp 的 AVX2 版逐位一致）
+void decode_i16_f32_packed16_scalar(const int16_t* src, int n_values, float scale, float* res_ptr) {
+    for (int i = 0; i < n_values; ++i) {
+        res_ptr[i] = static_cast<float>(src[i]) * scale;
+    }
+}
+
 void reverse_bytes8_scalar(uint64_t packed, int n, int64_t* out) {
     for (int i = 0; i < n; ++i) {
         out[i] = static_cast<int64_t>((packed >> (8 * (n - 1 - i))) & 0xFF);
