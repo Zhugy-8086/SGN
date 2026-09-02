@@ -20,7 +20,8 @@
 // per-file ISA 纪律与 simd_boundary_test 相同（阶段 1，见 CMakeLists.txt）：
 //   本文件只调用 simd_api.h 调度层接口，基础编译无 ISA 宏；
 //   各实现文件符号常驻，后端由 simd_dispatch 运行时 CPUID 选择。
-//   强制后端对比：SGN_KERNEL_BACKEND=scalar/avx2/... 环境变量。
+//   强制后端对比：SGN_KERNEL_BACKEND=scalar 环境变量（仅 scalar|sse2 生效，
+//   其余取值告警后忽略——见 simd_dispatch.cpp）。
 //
 // 覆盖原语：dot16, dot8, dot4, sum_f32, sum_sq_dev_f32, sum_sumprod_f32,
 //           accum_f32, decode_i16_f32, reverse_bytes8, batch_reverse_u8
@@ -260,9 +261,9 @@ static BenchResult bench_dot16(size_t K, int iters) {
     std::vector<int16_t> a(K), b(K);
     for (size_t i = 0; i < K; i++) { a[i]=rand_range<int16_t>(-20000,20000); b[i]=rand_range<int16_t>(-20000,20000); }
     volatile int64_t sink = 0;
-    for (int i = 0; i < 50; i++) sink += dot16(a.data(),b.data(),K);
+    for (int i = 0; i < 50; i++) sink = sink + dot16(a.data(),b.data(),K);
     double t0 = now_ms();
-    for (int i = 0; i < iters; i++) sink += dot16(a.data(),b.data(),K);
+    for (int i = 0; i < iters; i++) sink = sink + dot16(a.data(),b.data(),K);
     double t1 = now_ms();
     return {"dot16", K, (t1-t0)/iters*1000, (double)K*iters/(t1-t0)/1000, iters};
 }
@@ -272,9 +273,9 @@ static BenchResult bench_dot8(size_t K, int iters) {
     std::vector<int8_t> b(K);
     for (size_t i = 0; i < K; i++) { a[i]=(uint8_t)rng(); b[i]=(int8_t)rng(); }
     volatile int64_t sink = 0;
-    for (int i = 0; i < 50; i++) sink += dot8(a.data(),b.data(),K);
+    for (int i = 0; i < 50; i++) sink = sink + dot8(a.data(),b.data(),K);
     double t0 = now_ms();
-    for (int i = 0; i < iters; i++) sink += dot8(a.data(),b.data(),K);
+    for (int i = 0; i < iters; i++) sink = sink + dot8(a.data(),b.data(),K);
     double t1 = now_ms();
     return {"dot8", K, (t1-t0)/iters*1000, (double)K*iters/(t1-t0)/1000, iters};
 }
@@ -284,9 +285,9 @@ static BenchResult bench_dot4(size_t K, int iters) {
     std::vector<int8_t> b(K);
     for (size_t i = 0; i < K; i++) { a[i]=(uint8_t)rng(); b[i]=(int8_t)rng(); }
     volatile int64_t sink = 0;
-    for (int i = 0; i < 50; i++) sink += dot4(a.data(),b.data(),K);
+    for (int i = 0; i < 50; i++) sink = sink + dot4(a.data(),b.data(),K);
     double t0 = now_ms();
-    for (int i = 0; i < iters; i++) sink += dot4(a.data(),b.data(),K);
+    for (int i = 0; i < iters; i++) sink = sink + dot4(a.data(),b.data(),K);
     double t1 = now_ms();
     return {"dot4", K, (t1-t0)/iters*1000, (double)K*iters/(t1-t0)/1000, iters};
 }
@@ -295,9 +296,9 @@ static BenchResult bench_sum_f32(size_t K, int iters) {
     std::vector<float> p(K);
     for (auto& x : p) x = (float)(rng()%1000);
     volatile float sink = 0;
-    for (int i = 0; i < 50; i++) sink += sum_f32(p.data(),K,1);
+    for (int i = 0; i < 50; i++) sink = sink + sum_f32(p.data(),K,1);
     double t0 = now_ms();
-    for (int i = 0; i < iters; i++) sink += sum_f32(p.data(),K,1);
+    for (int i = 0; i < iters; i++) sink = sink + sum_f32(p.data(),K,1);
     double t1 = now_ms();
     return {"sum_f32", K, (t1-t0)/iters*1000, (double)K*iters/(t1-t0)/1000, iters};
 }

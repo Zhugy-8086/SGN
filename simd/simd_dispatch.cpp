@@ -20,20 +20,36 @@
 
 #include "simd/simd_api.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 // CPUID 检测用内联 intrinsic（跨平台）：
 //   - Windows/MSVC target: <intrin.h> 提供 __cpuid/__cpuidex/_xgetbv
 //   - Linux (GCC/Clang):    <cpuid.h> 提供 __get_cpuid/__get_cpuid_count；
-//                           _xgetbv 在 <immintrin.h>（-mavx 下可用）。
+//                           XCR0 读取用 sgn_xgetbv 内联汇编（见下）。
 // 置于全局命名空间：这些 intrinsic 是编译器内建，在匿名 namespace 内声明可能影响解析。
 #if defined(__x86_64__) || defined(_M_X64)
 #if defined(_MSC_VER)
 #include <intrin.h>
 #else
 #include <cpuid.h>
-#include <immintrin.h>  // _xgetbv（需 -mavx 或更高）
 #endif
+#endif
+
+// XCR0 读取（2026-09-02 远程复核修复，EPYC 9K65 报告问题 1·构建阻断）：
+// Linux/GCC 的 _xgetbv（<immintrin.h>）是 xsave target 的 always_inline intrinsic，
+// 基础编译（无 -mxsave）直接编译失败——改内联汇编，任何编译档位均可用。
+// MSVC 的 _xgetbv 无 target 要求，保留 intrinsic。
+#if defined(__x86_64__) || defined(_M_X64)
+static inline unsigned long long sgn_xgetbv(unsigned idx) {
+#if defined(_MSC_VER)
+    return _xgetbv(idx);
+#else
+    unsigned int eax, edx;
+    __asm__ __volatile__("xgetbv" : "=a"(eax), "=d"(edx) : "c"(idx));
+    return (static_cast<unsigned long long>(edx) << 32) | eax;
+#endif
+}
 #endif
 
 namespace sgn::simd {
@@ -116,7 +132,11 @@ struct CpuCaps {
 // CPUID 运行时检测。不用 __builtin_cpu_supports——其依赖 __cpu_model 运行时符号，
 // -nostdlib 链接的 .pyd 无法解析（同 pysgn_net.cpp 的 _cpu_has_avx2 结论）。
 // 跨平台：Windows 用 <intrin.h> 的 __cpuid/__cpuidex/_xgetbv；
-//          Linux 用 <cpuid.h> 的 __get_cpuid/__get_cpuid_count（_xgetbv 同 intrinsic）。
+//          Linux 用 <cpuid.h> 的 __get_cpuid/__get_cpuid_count + 内联汇编 xgetbv。
+// 2026-09-02 远程复核修复（EPYC 9K65 报告问题 1，构建阻断）：g++ 11.4 下
+// <immintrin.h> 的 _xgetbv 是 xsave target 的 always_inline intrinsic，基础编译
+// （无 -mxsave）直接编译失败。Linux 分支改内联汇编，任何编译档位均可用；
+// MSVC 分支的 _xgetbv 无 target 要求，保留。
 // 位定义：leaf1 ECX: SSSE3=9, AVX=28, XSAVE=27；leaf7 sub0 EBX: AVX2=5, AVX512F=16,
 //         AVX512BW=30；leaf7 sub0 ECX: AVX512VNNI=11；leaf7 sub1 EAX: AVX-VNNI=4；
 //         XCR0: XMM=1, YMM=2, opmask=4, ZMM hi=8。
@@ -134,14 +154,14 @@ static CpuCaps cpu_caps_x86() {
     const bool os_xsave = (r[2] & (1 << 27)) != 0;
     const bool cpu_avx  = (r[2] & (1 << 28)) != 0;
     c.ssse3 = (r[2] & (1 << 9)) != 0;
-    if (os_xsave && cpu_avx && (_xgetbv(0) & 0x6) == 0x6) {
+    if (os_xsave && cpu_avx && (sgn_xgetbv(0) & 0x6) == 0x6) {
         // XMM+YMM 状态已由 OS 使能（AVX/AVX2 前提）
         cpuid_leaf(7, 0, r);  // leaf7 subleaf0：一次调用读全 EBX/ECX/EDX
         c.avx2      = (r[1] & (1 << 5)) != 0;
         c.avx512f   = (r[1] & (1 << 16)) != 0;
         c.avx512_bw = (r[1] & (1 << 30)) != 0;
         // AVX-512 还需 opmask + ZMM hi256 状态（XCR0 0xE6）
-        if (c.avx512f && (_xgetbv(0) & 0xE6) != 0xE6) {
+        if (c.avx512f && (sgn_xgetbv(0) & 0xE6) != 0xE6) {
             c.avx512f = c.avx512_bw = false;
         }
         // AVX512-VNNI：leaf7 sub0 ECX bit11（2026-08-31 修正后正确，sub0 是其所在 leaf）
@@ -183,9 +203,16 @@ const SimdBackend& simd_backend() noexcept {
     // magic static: 仅第一次进入时求值一次，此后直接返回缓存引用（无分支）
     static const SimdBackend s = [] {
         // 环境变量强制后端（测试钩子，不做运行期热切换；与 dispatch/registry 一致）。
-        // 仅支持强制 scalar（sse2 同样落到标量原语）。
+        // 仅支持强制 scalar（sse2 同样落到标量原语）；其他取值告警并忽略
+        // （2026-09-02 远程复核 EPYC 9K65 报告问题 3：此前静默回退自动检测）。
         const char* forced = simd_getenv("SGN_KERNEL_BACKEND");
-
+        if (forced && *forced != '\0' &&
+            std::strcmp(forced, "scalar") != 0 && std::strcmp(forced, "sse2") != 0) {
+            std::fprintf(stderr,
+                         "[sgn::simd] warning: unknown SGN_KERNEL_BACKEND='%s', "
+                         "ignoring (supported: scalar|sse2); using CPUID auto-detect\n",
+                         forced);
+        }
         SimdBackend b;
         if (forced && (std::strcmp(forced, "scalar") == 0 ||
                        std::strcmp(forced, "sse2") == 0)) {

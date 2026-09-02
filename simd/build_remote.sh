@@ -150,4 +150,4 @@ if [ "$BENCH" = "1" ]; then
 fi
 echo "[simd] 运行: $OUT"
 echo "[simd] 提示: 远程机器各路径由 simd_dispatch CPUID 检测自动启用（VNNI/AVX2/AVX-512）；"
-echo "[simd]       如需强制某后端对比，设 SGN_KERNEL_BACKEND=scalar/avx2/avx512"
+echo "[simd]       强制后端对比仅支持 SGN_KERNEL_BACKEND=scalar（或 sse2），其余取值告警后忽略"

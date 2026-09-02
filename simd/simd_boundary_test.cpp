@@ -98,7 +98,9 @@ static void test_decode() {
         std::vector<float> r1(n), r2(n);
         decode_i16_f32(pv.data(), n, 0.25f, r1.data());
         decode_i16_f32_scalar(pv.data(), n, 0.25f, r2.data());
-        CHECK(std::memcmp(r1.data(), r2.data(), sizeof(float) * n) == 0,
+        // n=0 时 data() 返回 nullptr，memcmp 参数声明 nonnull（size=0 亦为 UB，
+        // 2026-09-02 远程复核 EPYC 9K65 报告问题 2）→ n>0 才比较
+        CHECK(n == 0 || std::memcmp(r1.data(), r2.data(), sizeof(float) * n) == 0,
               "decode_i16_f32 SIMD vs scalar mismatch");
     }
 }
@@ -122,7 +124,9 @@ static void test_reverse() {
                 r2(static_cast<size_t>(nv) * ns);
             batch_reverse_u8(pv.data(), nv, ns, r1.data());
             batch_reverse_u8_scalar(pv.data(), nv, ns, r2.data());
-            CHECK(std::memcmp(r1.data(), r2.data(), sizeof(int64_t) * nv * ns) == 0,
+            // nv=0 时指针为 nullptr（memcmp nonnull UB，同上）
+            CHECK(nv == 0 ||
+                  std::memcmp(r1.data(), r2.data(), sizeof(int64_t) * nv * ns) == 0,
                   "batch_reverse_u8 mismatch");
         }
     }
@@ -161,7 +165,8 @@ static void test_sum_series() {
         for (auto& x : s) x = static_cast<float>(rng() % 100);
         accum_f32(d1.data(), s.data(), n);
         accum_f32_scalar(d2.data(), s.data(), n);
-        CHECK(std::memcmp(d1.data(), d2.data(), sizeof(float) * n) == 0,
+        // n=0 时指针为 nullptr（memcmp nonnull UB，同上）
+        CHECK(n == 0 || std::memcmp(d1.data(), d2.data(), sizeof(float) * n) == 0,
               "accum_f32 mismatch");
     }
 }
