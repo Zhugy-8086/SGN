@@ -118,25 +118,25 @@ struct CpuCaps {
 // 跨平台：Windows 用 <intrin.h> 的 __cpuid/__cpuidex/_xgetbv；
 //          Linux 用 <cpuid.h> 的 __get_cpuid/__get_cpuid_count（_xgetbv 同 intrinsic）。
 // 位定义：leaf1 ECX: SSSE3=9, AVX=28, XSAVE=27；leaf7 sub0 EBX: AVX2=5, AVX512F=16,
-//         AVX512BW=30；leaf7 sub0 ECX: AVX512VNNI=11, AVX-VNNI=4；XCR0: XMM=1, YMM=2,
-//         opmask=4, ZMM hi=8。
-static void cpuid_leaf(int leaf, int* r) {
+//         AVX512BW=30；leaf7 sub0 ECX: AVX512VNNI=11；leaf7 sub1 EAX: AVX-VNNI=4；
+//         XCR0: XMM=1, YMM=2, opmask=4, ZMM hi=8。
+static void cpuid_leaf(int leaf, int sub, int* r) {
 #if defined(_MSC_VER)
-    __cpuid(r, leaf);
+    __cpuidex(r, leaf, sub);
 #else
-    __cpuid_count(leaf, 0, r[0], r[1], r[2], r[3]);
+    __cpuid_count(leaf, sub, r[0], r[1], r[2], r[3]);
 #endif
 }
 static CpuCaps cpu_caps_x86() {
     CpuCaps c = {false, false, false, false, false, false};
     int r[4];
-    cpuid_leaf(1, r);
+    cpuid_leaf(1, 0, r);
     const bool os_xsave = (r[2] & (1 << 27)) != 0;
     const bool cpu_avx  = (r[2] & (1 << 28)) != 0;
     c.ssse3 = (r[2] & (1 << 9)) != 0;
     if (os_xsave && cpu_avx && (_xgetbv(0) & 0x6) == 0x6) {
         // XMM+YMM 状态已由 OS 使能（AVX/AVX2 前提）
-        cpuid_leaf(7, r);  // leaf7 subleaf0：一次调用读全 EBX/ECX/EDX
+        cpuid_leaf(7, 0, r);  // leaf7 subleaf0：一次调用读全 EBX/ECX/EDX
         c.avx2      = (r[1] & (1 << 5)) != 0;
         c.avx512f   = (r[1] & (1 << 16)) != 0;
         c.avx512_bw = (r[1] & (1 << 30)) != 0;
@@ -144,11 +144,16 @@ static CpuCaps cpu_caps_x86() {
         if (c.avx512f && (_xgetbv(0) & 0xE6) != 0xE6) {
             c.avx512f = c.avx512_bw = false;
         }
-        // AVX-VNNI（256 位 VNNI）：leaf7 sub0 ECX bit4
-        c.avx_vnni = (r[2] & (1 << 4)) != 0;
-        // AVX512-VNNI：leaf7 sub0 ECX bit11（2026-08-31 修正——此前误读 subleaf1，
-        // 而 sub1 ECX 恒为 0 导致 VNNI 永不检测到；复用上方 r[2]，无需再查 CPUID）。
+        // AVX512-VNNI：leaf7 sub0 ECX bit11（2026-08-31 修正后正确，sub0 是其所在 leaf）
         c.avx512_vnni = (r[2] & (1 << 11)) != 0;
+        // AVX-VNNI（256 位 VNNI，vpdpbusd）：leaf7 sub1 EAX bit4
+        // （2026-09-02 修正，两处错误叠加：① subleaf 应为 1 非 0——sub0 ECX[4] 是
+        // OSPKE；② 寄存器应为 EAX 非 ECX——Intel SDM/Rust std 检测源码双确认
+        // CPUID.7.1.EAX[4]=AVX-VNNI，同寄存器 bit5=AVX512-BF16。旧代码读
+        // sub0 ECX[4]=OSPKE 位：OSPKE=0 机器（Arrow Lake/Windows 实测）VNNI 永不
+        // 检测到，dot8/dot4 静默落标量；EPYC/Linux 因 OSPKE=1 侥幸误判掩盖）。
+        cpuid_leaf(7, 1, r);
+        c.avx_vnni = (r[0] & (1 << 4)) != 0;
     }
     return c;
 }

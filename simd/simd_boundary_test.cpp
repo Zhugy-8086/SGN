@@ -172,6 +172,114 @@ static void test_backend_name() {
     CHECK(n != nullptr, "backend name null");
 }
 
+// ----------------------------------------------------------------------------
+// CPUID 位定义回归测试（2026-09-02）：检测逻辑与手工独立 CPUID 读数交叉验证。
+//
+// 背景：AVX-VNNI 检测曾双重错位（旧读 leaf7 sub0 ECX[4]=OSPKE 位，正确为
+// sub1 EAX[4]）——OSPKE=0 机器 dot8/dot4 静默落标量、EPYC/Linux 因 OSPKE=1
+// 侥幸误判掩盖（见 docs/SGN_ArrowLake速度测试归档_2026_09_02.md §2）。
+// 本测试在测试内**独立**读 CPUID（不复用 simd_dispatch 内部代码），按与
+// simd_backend() 相同的选择逻辑推导期望后端名，与 active_backend_name() 精确
+// 比对——位定义/subleaf/寄存器再读错即 FAIL，防复发。
+// 注意：两处 CPUID 读法若同时错且错得一样则测不出（同一作者同错概率低，且
+// 本文件的读取直接按 Intel SDM 位表写死，不参考 simd_dispatch 实现）。
+// ----------------------------------------------------------------------------
+#if defined(__x86_64__) || defined(_M_X64)
+#if defined(_MSC_VER)
+#include <intrin.h>
+static void raw_cpuid(int leaf, int sub, int* r) { __cpuidex(r, leaf, sub); }
+static uint64_t raw_xcr0() { return _xgetbv(0); }
+#else
+#include <cpuid.h>
+static void raw_cpuid(int leaf, int sub, int* r) {
+    __cpuid_count(leaf, sub, r[0], r[1], r[2], r[3]);
+}
+static uint64_t raw_xcr0() {
+    uint32_t lo, hi;
+    __asm__ __volatile__("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+    return (uint64_t(hi) << 32) | lo;
+}
+#endif
+
+static void test_cpuid_caps() {
+    // 强制后端模式（SGN_KERNEL_BACKEND=scalar/sse2）：simd_backend 直接走标量锚点，
+    // CPUID 推导不适用——期望 scalar(forced)，仅保留"无误选 VNNI"断言。
+    const char* forced = std::getenv("SGN_KERNEL_BACKEND");
+    const bool forced_scalar =
+        forced && (std::strcmp(forced, "scalar") == 0 ||
+                   std::strcmp(forced, "sse2") == 0);
+
+    int r[4];
+    // —— 按 Intel SDM 位表独立读取（注释即位定义出处）——
+    raw_cpuid(1, 0, r);
+    const bool osxsave = (r[2] & (1 << 27)) != 0;  // leaf1 ECX[27]
+    const bool cpu_avx = (r[2] & (1 << 28)) != 0;  // leaf1 ECX[28]
+    const bool ssse3   = (r[2] & (1 << 9)) != 0;   // leaf1 ECX[9]
+    (void)cpu_avx;
+    const uint64_t xcr0 = osxsave ? raw_xcr0() : 0;
+    const bool os_ymm = (xcr0 & 0x6) == 0x6;       // XMM+YMM 状态
+
+    bool avx2 = false, avx512f = false, avx512bw = false, avx512vnni = false,
+         avx_vnni = false;
+    if (os_ymm) {
+        raw_cpuid(7, 0, r);  // leaf7 sub0
+        avx2      = (r[1] & (1 << 5)) != 0;    // EBX[5]
+        avx512f   = (r[1] & (1 << 16)) != 0;   // EBX[16]
+        avx512bw  = (r[1] & (1 << 30)) != 0;   // EBX[30]
+        avx512vnni = (r[2] & (1 << 11)) != 0;  // ECX[11]
+        const bool os_zmm = (xcr0 & 0xE6) == 0xE6;  // opmask+ZMM hi256
+        if (avx512f && !os_zmm) { avx512f = avx512bw = false; avx512vnni = false; }
+        raw_cpuid(7, 1, r);  // leaf7 sub1
+        avx_vnni = (r[0] & (1 << 4)) != 0;     // EAX[4] ← 2026-09-02 修复位
+    }
+
+    const char* actual = active_backend_name();
+
+    if (forced_scalar) {
+        std::printf("cpuid caps: avx2=%d avx_vnni(sub1.EAX[4])=%d avx512vnni=%d "
+                    "(forced scalar mode)\n", avx2, avx_vnni, avx512vnni);
+        CHECK(std::strcmp(actual, "scalar(forced)") == 0,
+              "forced scalar mode but backend is not scalar(forced)");
+    } else {
+        // —— 期望后端名（与 simd_dispatch.cpp simd_backend() 选择逻辑逐条一致）——
+        const char* expect;
+        if (avx512vnni && avx512bw)      expect = "avx512vnni";
+        else if (avx512f && avx512bw)    expect = "avx512f";
+        else if (avx_vnni)               expect = "avxvnni";
+        else if (avx2)                   expect = "avx2";
+        else if (ssse3)                  expect = "ssse3";
+        else                             expect = "scalar";
+
+        std::printf("cpuid caps: avx2=%d avx_vnni(sub1.EAX[4])=%d avx512vnni=%d "
+                    "expect=%s\n", avx2, avx_vnni, avx512vnni, expect);
+        CHECK(std::strcmp(actual, expect) == 0,
+              "active_backend_name != independent CPUID expectation");
+
+        // 防错位回归断言：
+        // 1. CPUID 报告有 256 位 VNNI → 后端必须是 vnni 系（dot8 不得静默落标量）
+        if (avx_vnni) {
+            CHECK(std::strcmp(actual, "avxvnni") == 0 ||
+                  std::strcmp(actual, "avx512vnni") == 0,
+                  "AVX-VNNI present but dot8 backend not vnni (detection misread?)");
+        }
+    }
+    // 2.（两种模式均适用）CPUID 报告无 256/512 VNNI → 后端不得是 vnni 系
+    //   （防误选 illegal instruction；强制标量下天然满足，仍断言防回归）
+    if (!avx_vnni && !(avx512vnni && avx512bw)) {
+        CHECK(std::strcmp(actual, "avxvnni") != 0 &&
+              std::strcmp(actual, "avx512vnni") != 0,
+              "VNNI absent but backend claims vnni (detection misread?)");
+    }
+}
+#else
+static void test_cpuid_caps() {
+    // 非 x86：仅检查后端名为标量系
+    CHECK(std::strcmp(active_backend_name(), "scalar(forced)") == 0 ||
+          std::strcmp(active_backend_name(), "scalar") == 0,
+          "non-x86 backend should be scalar");
+}
+#endif
+
 int main() {
     test_dot16();
     test_dot8_dot4();
@@ -179,6 +287,7 @@ int main() {
     test_reverse();
     test_sum_series();
     test_backend_name();
+    test_cpuid_caps();
     if (failures == 0) {
         std::printf("ALL BOUNDARY TESTS PASSED\n");
         return 0;

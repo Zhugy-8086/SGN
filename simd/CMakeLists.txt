@@ -2,7 +2,7 @@
 # simd/ 原语层独立构建入口（"引线"）
 # ============================================================
 # 用途：独立的接口调用入口——仅编译 simd/ 文件夹（scalar / simd_dispatch /
-#       x86/* / arm/neon / simd_boundary_test），产出独立可执行，
+#       x86/* / arm/neon / simd_boundary_test / sgn_benchmark），产出独立可执行，
 #       不依赖 pybind11 / libomp / Python。
 #
 # 与 engine/sgn/ 主构建完全隔离：
@@ -73,3 +73,25 @@ set_source_files_properties(
 set_source_files_properties(
     x86/avx512vnni.cpp
     PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512bw;-mavx512vl;-mavx512vnni")
+
+# ------------------------------------------------------------
+# sgn_benchmark：原语层完整基准（正确性 + 性能 + JSON 输出）
+# ------------------------------------------------------------
+# 2026-09-02 收编：原件为远程验证归档 _remote_test_decompressed/sgn_benchmark/
+# （EPYC 2026-08-31 实测版本，保留不动），本 target 使用收编的 portable 副本
+# sgn_benchmark.cpp（chrono 计时 + CWD JSON 路径，计算逻辑与原件一致）。
+# per-file ISA 复用上方同一组源文件属性；本文件自身基础编译（仅调调度层）。
+# 运行：./build/sgn_benchmark [--json-only]；强制后端：SGN_KERNEL_BACKEND=scalar
+add_executable(sgn_benchmark
+    scalar.cpp
+    simd_dispatch.cpp
+    x86/avx2.cpp
+    x86/avxvnni.cpp
+    x86/ssse3.cpp
+    x86/avx512.cpp
+    x86/avx512vnni.cpp
+    arm/neon.cpp
+    sgn_benchmark.cpp
+)
+
+target_include_directories(sgn_benchmark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")

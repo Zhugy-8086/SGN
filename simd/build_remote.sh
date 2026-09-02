@@ -20,11 +20,13 @@
 #
 # 用法：
 #   ./build_remote.sh                # Release 构建（默认 AVX-512 全开）
-#   ./build_remote.sh --ubsan        # + UBSan（抓未定义行为，-O1）
+#   ./build_remote.sh --bench        # + sgn_benchmark（原语正确性+性能基准，-O3）
+#   ./build_remote.sh --ubsan        # + UBSan（抓未定义行为，-O1；与 --bench 互斥）
 #   ./build_remote.sh --clang        # 用 clang++（默认 g++）
 #   ./build_remote.sh --clean        # 清理 build/ 后退出
 #
 # 产出：simd/build/simd_boundary_test（直接运行：./simd/build/simd_boundary_test）
+#       --bench 时另产出 simd/build/sgn_benchmark（CPUID 修复复核 + dot8 性能）
 #
 # 环境变量：
 #   CXX       覆盖编译器（默认 g++ / clang++）
@@ -48,20 +50,28 @@ SRCS=(
     simd_boundary_test.cpp
 )
 
-# ---- 默认参数 ----
+# ---- 参数 ----
 CXX="${CXX:-g++}"
 MODE="release"
 UBSAN=0
 CLEAN=0
+BENCH=0
 
 for arg in "$@"; do
     case "$arg" in
         --ubsan)  UBSAN=1 ;;
         --clang)  CXX="clang++" ;;
         --clean)  CLEAN=1 ;;
+        --bench)  BENCH=1 ;;   # 编译 sgn_benchmark（原语正确性+性能基准，-O3）；
+                               # 与 --ubsan 互斥（UBSan 下性能数据无意义）
         *) echo "未知参数: $arg" >&2; exit 1 ;;
     esac
 done
+
+if [ "$BENCH" = "1" ] && [ "$UBSAN" = "1" ]; then
+    echo "[simd] ERROR: --bench 与 --ubsan 互斥（UBSan -O1 下性能数据无意义）" >&2
+    exit 1
+fi
 
 if [ "$CLEAN" = "1" ]; then
     rm -rf "$BUILD_DIR"
@@ -99,6 +109,10 @@ echo "[simd] mode      = $([ "$UBSAN" = 1 ] && echo 'ubsan' || echo 'release')"
 echo "[simd] build dir = $BUILD_DIR"
 
 # ---- 逐文件编译为 .o（按文件级 ISA 选项；无映射的文件走基础编译）----
+# --bench 模式额外编译 sgn_benchmark.cpp（两个 main 分开链接）
+if [ "$BENCH" = "1" ]; then
+    SRCS+=(sgn_benchmark.cpp)
+fi
 OBJS=()
 for src in "${SRCS[@]}"; do
     obj="$BUILD_DIR/${src//\//_}.o"
@@ -114,11 +128,26 @@ for src in "${SRCS[@]}"; do
 done
 
 # ---- 链接（基础选项即可；各 .o 已带各自指令）----
+# 两个 main 互斥链接：boundary exe 排除 bench.o，bench exe 排除 boundary_test.o
 OUT="$BUILD_DIR/simd_boundary_test"
+BOUNDARY_OBJS=(); BENCH_OBJS=()
+for obj in "${OBJS[@]}"; do
+    case "$obj" in
+        *sgn_benchmark.cpp.o)       BENCH_OBJS+=("$obj") ;;
+        *simd_boundary_test.cpp.o)  BOUNDARY_OBJS+=("$obj") ;;
+        *)                          BOUNDARY_OBJS+=("$obj"); BENCH_OBJS+=("$obj") ;;
+    esac
+done
 # shellcheck disable=SC2086
-"$CXX" $BASE_FLAGS "${OBJS[@]}" -o "$OUT"
-
+"$CXX" $BASE_FLAGS "${BOUNDARY_OBJS[@]}" -o "$OUT"
 echo "[simd] OK → $OUT"
+
+if [ "$BENCH" = "1" ]; then
+    BOUT="$BUILD_DIR/sgn_benchmark"
+    # shellcheck disable=SC2086
+    "$CXX" $BASE_FLAGS "${BENCH_OBJS[@]}" -o "$BOUT"
+    echo "[simd] OK → $BOUT（性能数据仅 --bench 默认 -O3 口径有效）"
+fi
 echo "[simd] 运行: $OUT"
 echo "[simd] 提示: 远程机器各路径由 simd_dispatch CPUID 检测自动启用（VNNI/AVX2/AVX-512）；"
 echo "[simd]       如需强制某后端对比，设 SGN_KERNEL_BACKEND=scalar/avx2/avx512"
