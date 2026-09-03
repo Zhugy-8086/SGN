@@ -102,8 +102,8 @@ cmake --build build
 - [SGN 性能白皮书](docs/SGN_性能白皮书.md) — 性能基线、优化路线、测量方法
 - [用户操作手册](docs/SGN_用户使用手册.md) / [Autograd 用户操作手册](docs/SGN_Autograd_用户操作手册.md)
 - [Arrow Lake 速度测试归档](docs/SGN_ArrowLake速度测试归档_2026_09_02.md) /
-  [EPYC 速度测试归档](docs/SGN_EPYC速度测试归档_2026_08_31.md)
-
+  [EPYC 速度测试归档](docs/SGN_EPYC速度测试归档_2026_08_31.md) /
+  [EPYC 速度测试归档](docs/SGN_EPYC_Zen5速度测试归档_2026_09_03.md)
 ## 路线图
 
 - [ ] 核心引擎开源：tape 自动微分、标准层 / 损失 / 优化器、MSint 编码、Level 调度器、
