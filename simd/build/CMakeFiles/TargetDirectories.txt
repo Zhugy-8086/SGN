@@ -1,4 +1,0 @@
-C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/simd_boundary_test.dir
-C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/sgn_benchmark.dir
-C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/edit_cache.dir
-C:/code/mimo-test/SGN/engine/sgn/simd/build/CMakeFiles/rebuild_cache.dir
