@@ -108,34 +108,4 @@ target_include_directories(gemm_benchmark PRIVATE "${INC_DIR}")
 set_source_files_properties(
     gemm_benchmark.cpp
     PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma")
-
-# ------------------------------------------------------------
-# gemm_vs_matmul：gemm_i8 vs ops.cpp matmul 本体同口径对比（R3 欠账②）
-# 链接引擎现役 float matmul 链（ops.cpp + tensor.cpp + dispatch/registry.cpp，
-# 依赖 header-only 的 common/{logger,allocator}.h）；ops.cpp 含 #pragma omp，
-# per-file -fopenmp=libomp + 链接 LLVM libomp（同主构建模式）。
-# ------------------------------------------------------------
-if(NOT LLVM_ROOT)
-    set(LLVM_ROOT "c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc"
-        CACHE PATH "LLVM/Clang 安装根目录" FORCE)
-endif()
-set(LIBOMP_LIB "${LLVM_ROOT}/lib/libomp.lib")
-set(LIBOMP_DLL "${LLVM_ROOT}/bin/libomp.dll")
-
-add_executable(gemm_vs_matmul
-    ${GEMM_SOURCES} ${SIMD_SOURCES}
-    gemm_vs_matmul.cpp
-    ../../autograd/ops.cpp
-    ../../autograd/tensor.cpp
-    ../../autograd/ops_nn.cpp
-    ../../dispatch/registry.cpp)
-target_include_directories(gemm_vs_matmul PRIVATE "${INC_DIR}")
-set_source_files_properties(
-    ../../autograd/ops.cpp
-    ../../autograd/ops_nn.cpp
-    PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma;-fopenmp=libomp")
-target_link_libraries(gemm_vs_matmul PRIVATE "${LIBOMP_LIB}")
-# libomp.dll 复制到输出目录（运行时依赖，同主构建模式）
-add_custom_command(TARGET gemm_vs_matmul POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LIBOMP_DLL}"
-            $<TARGET_FILE_DIR:gemm_vs_matmul>)
+    
