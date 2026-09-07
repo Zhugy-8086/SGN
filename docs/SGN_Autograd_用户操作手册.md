@@ -1,8 +1,9 @@
 ﻿# SGN C++ Autograd 框架 用户操作手册
 
 > **版本**: v0.10.1（安全修复：4个高危漏洞 + 5个中危漏洞修复）
-> **更新日期**: 2026-08-29
-> **上版本**: v0.9.0（SGN Lite 废弃代码剥离完成，独设计档目里程碑，2026-08-16）
+> **更新日期**: 2026-09-07（增量同步：§3.6 C++ 测试目标补全、§3.7 pybind11_DIR、
+> §6.2 算子表补全、§6.3.2 量化配置分离与 QuantConfigGuard、§6.4 mkern 绑定子模块）
+> **上版本**: v0.9.0（SGN Lite 废弃代码剥离完成，独立项目里程碑，2026-08-16）
 > **适用对象**: 协作者 / 团队成员
 > **代码位置**: [engine/sgn/autograd/](engine/sgn/autograd/)、[engine/sgn/level/](engine/sgn/level/)、[engine/sgn/hc/](engine/sgn/hc/)
 > **研发链条**: 本文件属于 **第一批（数学验证 + 工程实现）**，详见 [docs/ 文档优先级链](DOCS_PRIORITY_CHAIN.md)
@@ -57,7 +58,7 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 - **双模式编程**：稳定模式（`sgn.nn.Module` 封装）和调试模式（自由函数），可混合使用
 
 **当前状态（v0.10.0 - 基础设施补齐：Optimizer/checkpoint/实验框架/随机性工具 + SIMD 原语层）**：
-- ✅ **独设计档目确立**：2026-08-15 完成 SGN Lite 废弃代码剥离，`engine/sgn/` 为唯一活跃项目，版本号从继承的 5.x 体系切换为独立 v0.x 体系
+- ✅ **独立项目确立**：2026-08-15 完成 SGN Lite 废弃代码剥离，`engine/sgn/` 为唯一活跃项目，版本号从继承的 5.x 体系切换为独立 v0.x 体系
 - ✅ 功能完整：6 层 CNN 前向+反向已验证（与 PyTorch 数值一致）
 - ✅ **双模式系统**：Module 基类（参数管理、序列化、模式切换）+ Parameter/Buffer 包装
 - ✅ 双模式一致性测试全 PASS：调试模式、稳定模式、混合模式前向输出和梯度完全一致
@@ -84,7 +85,7 @@ SGN C++ Autograd 框架是一个轻量级的自动微分引擎，用于替代 Nu
 - ✅ 内置损失函数：`sgn.loss` 模块（MSELoss / CrossEntropyLoss / WeightedSumLoss + LossDiagnoser 诊断器）
 - ✅ **MSint 多精度拆分组合落地（v0.8.1）**：`sgn.SplitDot` / `sgn.MultiScaleView` / `sgn.PrecisionSelector` / `sgn.LeveledSplitDot` 已实现——1:N 多精度解释（int32→{16,8,4} 每层可逆）+ Level 逐元素精度选择（重要性越高拆分越细）组合为异构粒度逐元素拆分点积，融合仍 bit-exact 等价原始点积；数学验证 #22–#28 全通过
 - ✅ **H3 带宽基准 + SIMD 优化基线（v0.8.1）**：H3 带宽加速已证实（按需位宽 + 1:N 多输出复用两个正交来源）；`validate_bench_msint_simd_baseline.py` 固化未优化标量 baseline 与 SIMD 适用性分析——**唯一优化焦点为 dot_split 组内点积**（已实施：16 位 AVX2 `mul_epi32` + 8 位 AVX-VNNI `dpbusd` + 4 位 nibble `vpshufb`+`dpbusd`，见 [SGN 性能白皮书](SGN_性能白皮书.md) §5），决策层/控制层/128 位融合不做；硬约束：SIMD 必须编译时宏保留非 x86 标量回退
-- ✅ **全局 AVX 编译参数移除（2026-08-31，阶段 1-4）**：CMake 不再全局 `-mavx2 -mavxvnni`（全局仅 `-O3`），AVX2/AVX-VNNI/FMA 下沉 per-file（simd/、hc/、ops）+ 编译期宏短路消除 → 指令集选择**完全由运行时 CPUID 门控**：同一二进制在无 AVX-VNNI 的 CPU 上自动回退 AVX2/标量，不再 illegal instruction；同时修复本机 `sgn.diagnose()` 此前虚报 `AVX-VNNI ✓` 的问题（该值是编译期宏假象，见 [全局AVX编译参数移除调查](engine/sgn/内部档案)）
+- ✅ **全局 AVX 编译参数移除（2026-08-31，阶段 1-4）**：CMake 不再全局 `-mavx2 -mavxvnni`（全局仅 `-O3`），AVX2/AVX-VNNI/FMA 下沉 per-file（simd/、hc/、ops）+ 编译期宏短路消除 → 指令集选择**完全由运行时 CPUID 门控**：同一二进制在无 AVX-VNNI 的 CPU 上自动回退 AVX2/标量，不再 illegal instruction；同时修复本机 `sgn.diagnose()` 此前虚报 `AVX-VNNI ✓` 的问题（该值是编译期宏假象，见 [全局AVX编译参数移除调查](engine/sgn/fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md)）
 - ✅ **AVX-VNNI CPUID 检测修复 + sgn_benchmark 收编（2026-09-02）**：simd_dispatch 的 AVX-VNNI 检测双重错位修复（sub0 ECX[4]=OSPKE → sub1 EAX[4]），OSPKE=0 机器上 dot8/dot4 从静默标量回退恢复 VNNI 快路径（本机 Arrow Lake 实测 dot8 原语 ~30×，2.9k→93.5k Mops/s）；原语基准 `sgn_benchmark` 收编进 simd 主构建（portable 版，任意机器一键验证）。详见 [SGN Arrow Lake 速度测试归档](SGN_ArrowLake速度测试归档_2026_09_02.md)
 - ✅ **int8 对（h,l）叶梯度存储（2026-09-02，实验功能默认关闭）**：`set_pair_grad_store` 开关 + `grad_pair`/`PairGradView` 研究视图——单路径叶梯度 2B/元素存储（显存 -50%），grad() 透明解码缓存，训练动态与关闭时逐位一致；SR 序列对齐由共享内核 sr_kernel.cpp 结构保证。用法见 §6.3.1，数学验证见统一数学框架 #30/#31/#32
 
@@ -187,6 +188,14 @@ cmake --build build --config Debug --target test_phase1 test_phase2 test_phase3
 | `test_phase1` | Storage + Tensor + matmul forward/backward（vs PyTorch） |
 | `test_phase2` | tape-based Autograd 引擎（链式法则 + 累加） |
 | `test_phase3` | 神经网络算子（linear/relu/bn/conv2d/maxpool forward+backward） |
+| `test_pair_grad_carrier` | int8 对（h,l）梯度载体：编解码往返 / SR 双路 bit-exact / dot8 消费恒等式 |
+| `test_tape_hybrid` | tape 混合语义：pair↔float 切换隔离 / QuantConfigGuard RAII / clip_sigma 惰性 |
+| `test_cpuid_caps_mock` | CPUID caps 纯派生 mock 回归（Arrow Lake OSPKE 误读 bug 固化，不依赖真机） |
+
+> 注：`test_pair_grad_carrier` / `test_tape_hybrid` / `test_cpuid_caps_mock`
+> 依赖 simd 原语与 msint 源文件，CMake 目标在 Debug 测试块统一管理
+> （2026-09-07 起）。无 ASan 需求时可直接在 Release build 目录
+> `cmake --build build --target <目标名>` 单独构建（若该目录为 Debug 配置）。
 
 ### 3.7 常见构建问题
 
@@ -195,6 +204,7 @@ cmake --build build --config Debug --target test_phase1 test_phase2 test_phase3
 | `ImportError: DLL load failed` | 缺 `libomp.dll` | CMake 已自动复制到 build 目录，确认文件存在 |
 | `undefined symbol: __kmpc_*` | 链接了 MSVC `vcomp.lib` | 必须用 Clang + libomp，不要混用 |
 | ASan 相关错误 | Debug 模式启用 ASan | 用 Release 模式，或加 `-fno-sanitize=address` |
+| `Could not find a package configuration file provided by "pybind11"` | 新 build 目录无缓存，CMake 自动探测不到 site-packages | 配置时显式指定 `-Dpybind11_DIR=<Python site-packages>/pybind11/share/cmake/pybind11` |
 
 ---
 
@@ -621,10 +631,15 @@ sgn.autograd.clear()                    # 清空 tape
 | `matmul(a, b)` | 矩阵乘法 |
 | `linear(x, w, b)` | 全连接层 |
 | `relu(x)` | ReLU 激活 |
-| `conv2d(x, w, b, stride, padding)` | 2D 卷积 |
+| `sigmoid(x)` / `tanh(x)` / `gelu(x)` / `silu(x)` | 激活族（2026-08-31 模块化批次） |
+| `conv2d(x, w, b, stride, padding)` | 2D 卷积（NCHW 输入 / OIHW 权重，仅 float32，不支持 groups/dilation） |
+| `add(a, b)` | 逐元素加（残差连接；backward dA=dB=dY） |
+| `mul(a, b)` | 逐元素乘（**无广播**，形状必须一致） |
 | `maxpool2d(x, kernel, stride)` | 2D 最大池化 |
+| `avgpool2d(x, kh, kw)` | 平均池化（GAP 常用：`avgpool2d(h, 7, 7)`；无梯度场景 numpy 侧可用 `x.mean(axis=(2,3))` 等价） |
 | `bn_train(x, gamma, beta, rm, rv, momentum, eps, dim)` | BatchNorm 训练模式 |
-| `batchnorm2d(x, gamma, beta, rm, rv, momentum, eps)` | BatchNorm2d（4D 输入） |
+| `batchnorm2d(x, gamma, beta, rm, rv, momentum, eps)` | BatchNorm2d（4D 输入；**恒为 train 语义**——更新 running stats，推理期 eval 需自行折叠 BN 到 conv 权重） |
+| `layernorm(x, ...)` | LayerNorm（ops_norm 族） |
 | `reshape(x, shape)` | 改变形状（支持 -1） |
 | `conv2d_relu(x, w, b, stride, padding)` | Conv2d+ReLU 融合算子 |
 
@@ -701,6 +716,82 @@ ag.set_pair_grad_store(False)    # 关闭
 数学依据与验证链：[msint_int8_pair_grad_carrier_2026_08_31.md]
 §六/§七/§八（统一数学框架 #30/#31/#32）；SR 序列对齐由共享内核
 （autograd/sr_kernel.cpp）结构保证。
+
+#### 6.3.2 前向/反向量化配置分离与 QuantConfigGuard（2026-09-07）
+
+前向 STE 与反向梯度量化的位宽**相互独立**（链路核查 2026-08-21 P0-2 修复：
+此前两者共用同一 qcfg，切前向位宽会意外覆写反向配置）：
+
+```python
+ag = sgn.autograd
+
+ag.set_ste_quant_config(bits=8, clip_sigma=4.0)    # 前向 STE（linear/conv2d 的 *_forward_ste）
+ag.set_quant_config(bits=16, clip_sigma=4.0)       # 反向 GEF/SR/A1 梯度量化（Tape::backward）
+```
+
+`QuantConfigGuard` RAII 作用域守卫（**C++ 原语，宿主 ops_nn.h，暂无 Python
+绑定**）把"前向/反向配置对"变成原语——构造时保存两配置副本并写入新值，
+析构无条件恢复（异常安全，支持嵌套）。C++ 侧用法：
+
+```cpp
+#include "autograd/ops_nn.h"
+using namespace sgn_autograd;
+
+{
+    QuantConfigGuard g(QuantConfig{4, 2.0f}, QuantConfig{8, 3.0f});
+    // 作用域内：前向 bits=4/σ=2.0，反向 bits=8/σ=3.0
+    ...
+}   // 离开作用域自动恢复进入前的两配置（即使中途抛异常）
+```
+
+Python 训练脚本目前用显式 `set_ste_quant_config` / `set_quant_config` 对
+（守卫语义由 C++ 测试 `tests/architecture/test_tape_hybrid.cpp`（H4）钉死；
+Python 绑定按需后补）。
+
+### 6.4 mkern 绑定子模块（mkern_simd / mkern_nested，层 2 状态消费入口）
+
+两个 pybind 子模块暴露 mkern 微内核层的整型点积与嵌套量化原语（2026-09-07
+numpy 零拷贝热路径收口后，均有 list 版与 `_np` 后缀 numpy 版双路径——同
+C++ 内核逐位一致）：
+
+#### 6.4.1 `sgn.mkern_simd`（整型点积原语，kBitExact 全 K）
+
+```python
+mk = sgn.mkern_simd
+
+mk.dot8(a_u8, b_s8)          # uint8[K]×int8[K] → int64 精确点积（list 版）
+mk.dot8_np(a_np, b_np)       # numpy 零拷贝版（2^18 分块 + 块间 int64，全 K bit-exact）
+mk.dot4_np(a, b)             # 4 位预解包点积
+mk.dot4_packed_np(a_p, b_p)  # 4×4 打包 nibble 点积（K = 2×len 隐式，带宽减半）
+mk.unpack_nibble_u_np(pk)    # nibble 解包 → uint8[2K]（Q4 状态面 = state_s4+8）
+mk.active_backend()          # 'avx512vnni'/'avxvnni'/'avx2'/'ssse3'/'scalar'
+```
+
+**`_np` 版零拷贝契约（严格校验，不符 ValueError 不静默转换）**：入侧必须是
+1-D C-contiguous + 精确 dtype（如 uint8/int8/float32）的 numpy 数组；非连续
+切片先 `np.ascontiguousarray(...)`。裸 `py::array_t` caster 会静默转换/拷贝，
+热路径要显式报错——这是有意偏离 `prepare_downcast_np` 的 forcecast 先例。
+
+**零点修正语义**（层 2 设计 §三）：Q8 floor 平面 `q_u8 = (code>>24)+128`，
+`dot8(q_u8,w) − 128·Σw == Σ q_floor·w`（int64 域逐位）；Q4 仿射解包同理
+零点 8。消费层封装见 `engine/sgn/leveled_state.py`（LeveledStateBatch /
+LeveledLTCInference），验收测试 `engine/sgn/tests/test_leveled_state.py`。
+
+#### 6.4.2 `sgn.mkern_nested`（嵌套量化：一次 SR 量化，多档即取）
+
+```python
+nk = sgn.mkern_nested
+nk.LEVELS                     # (4, 8, 16, 32)
+code = nk.nested_quant_i32_np(h_f32, u, seed)    # float32[N] → int64 码字
+v8   = nk.nested_view_codes(code_list, 8)        # Q8 档整数码视图（RTN half-to-even）
+vals = nk.nested_dequant_np(code, u, 8)          # 档位反量化 → float32[N]
+nk.active_backend()           # 'avx512'/'avx2'/'scalar(forced)'
+```
+
+规格（冻结于 `mkern/nested/nested_api.h` 头注）：`x = h/u`（f64 除法，u 按
+f32 传入）、`I = floor(x) + Bernoulli[U<frac]`（SplitMix64 计数器 RNG，同
+seed 同输入跨后端/跨语言逐位一致）；±2^31 饱和；h=0 吸收态。`u`/`seed`
+的 f32 舍入口径是冻结语义，调用方传 `float(np.float32(u))`。
 
 ---
 

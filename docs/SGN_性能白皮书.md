@@ -1,4 +1,4 @@
-# SGN 性能白皮书（Performance Whitepaper）
+﻿# SGN 性能白皮书（Performance Whitepaper）
 
 > **版本**: v0.10.1（对应 SGN C++ Autograd 框架，2026-08-30）
 
@@ -544,6 +544,23 @@ v0.7.1 测量时 B=16 的 C++ fwd+bwd 为 94.68ms（差距 10.4x），v0.7.2 恢
 旧口径（§3.1–3.6 的"SGN vs PyTorch 3.3–4.8×"）保留作历史数据，**引用时
 必须附带本节口径说明**，禁止单独摘出作为"SGN 比 PyTorch 慢 N 倍"或
 反向的"SGN 更高效"表述。
+
+### 3.8 生产速度基准（2026-09-07：SGN-A1 vs PyTorch 端到端，4 核对齐）
+
+> 完整判读：生产速度基准判读_ResNet8-MNIST_2026_09_07.md（内部判读档，未随公开仓分发）。
+> 口径：ResNet-8（78k）× MNIST 全量 60k/10k，**端到端 epoch**（含 loss/
+> optimizer/数据批切），R=3×E=3 两级平均丢 warmup，双臂同 init/同批序。
+
+| 负载 | SGN-A1 | PyTorch f32 | 差距 |
+|---|---|---|---|
+| 训练（ms/batch，B=64） | 349.7 | 28.9 | PyTorch 快 **12.09×** |
+| 推理（ms/batch，B=250） | 342.2（折叠+quant8-w+STE） | 32.0（eval f32） | PyTorch 快 **10.69×** |
+| 精度 | 98.09%（折叠）/ 98.17%（分离式） | 97.89% | A1 近无损 |
+
+参照臂（torch_native，原生 CNNMnist+DataLoader，模型不同**不可比**）：
+6.8 ms/batch、test acc 98.9%——印证差距主导项是**模型结构（BN/残差 →
+im2col 物化）与框架实现，而非量化语义**。归因与后续（conv 去物化、
+int8 GEMM 消费内核 = 层 3 native 批量绑定）见判读档 §四/§五。
 
 ## 4. 优化路线图
 
