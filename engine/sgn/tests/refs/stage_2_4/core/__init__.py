@@ -1,0 +1,1 @@
+"""core 模块：阶段 2.4 numpy 独立反向核心组件（自 legacy/traditional/stage_2_4_independent/core/ 复制，2026-08-16 legacy 独立）"""

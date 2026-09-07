@@ -1,0 +1,90 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+sgn_crash_*.log
+
+# 编译产物（未归入 build/ 的本地可执行/符号文件不入库）
+*.exe
+*.pdb
+# 源码/README 入库，编译出的二进制不入库；simd 层 2026-09-03 迁入 mkern/ 微内核层）
+
+# 外部测试产物（他人对提交前版本的测试记录，非本仓库内容，不入库）
+engine/sgn/mkern/simd/sgn_sourcecode_review.md
+
+# Models
+*.json
+!config/sgn_config.json
+# 显式保留 benchmark 结果和测试样本
+!tests/**/*.json
+!results/**/*.json
+!benchmarks/**/*.json
+# R6 协议→归因参照（protocol 产物，attribution 读取）
+!engine/sgn/logs/free_roam_ref.json
+
+# Temporary
+uploads/
+.uploads/
+
+# 本地数据集（CIFAR-10 等，300MB+，不入库；脚本自动从 data/ 读取）
+data/
+
+# pytest
+.pytest_cache/
+
+# TRAE 记忆文件（本地会话状态，不应入库；原始文件位于 .trae-cn/memory/）
+# 安全审计 2026-08-16 决策项 9：从 git 跟踪中移除
+project_memory.md
+topics.md
+
+# legacy 已独立（2026-08-16：git 跟踪移除，工作区保留，打包为 7z 归档）
+# 历史提交中仍可追溯；不再跟踪，避免 untracked 干扰
+legacy/
+legacy.7z
+
+# 数学验证独立项目（2026-08-27）：ultrametric 验证为独立 git 仓库（MIT 许可），
+# 不应并入 SGN 外层仓库（Apache-2.0）；scratch 归档与临时日志亦不入库
+math_verification/_outer_pytest_log.txt
+math_verification/publish/_archive_ultrametric_split_2026_08_27/
+math_verification/publish/ultrametric_verification/
+
+# IDE 本地会话/计划文件（zcode 等，同 .trae 纪律，不应入库）
+.zcode/
+
+# math_verification/publish 下为独立嵌套仓库（内容由各自 repo 管理，不进 SGN 主仓）
+math_verification/publish/integer_quant_math_verification/
+math_verification/publish/closed_form_quant_verification/
+math_verification/publish/ultrametric_verification/
+内部档案

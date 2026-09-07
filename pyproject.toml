@@ -1,0 +1,141 @@
+# SGN C++ Autograd pyproject.toml
+# PEP 621 项目元数据 + setuptools 后端
+# 安装方式: pip install -e . (开发) / pip install . (发布)
+# 配合 requirements.txt 使用（pyproject 是权威声明，requirements 是最小可用集）
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ============================================================
+# 项目元数据
+# ============================================================
+[project]
+# 安全审计 2026-08-16 B3-1/2/3：包名/描述去 sgn-lite 化，requires-python
+# 对齐实际 ABI（.pyd 为 cp314，3.10-3.13 上 import 必然失败）
+name = "sgn"
+version = "0.10.1"
+description = "SGN C++ Autograd -- HC 整数化自研 autograd 引擎（AVX2/AVX-VNNI）"
+readme = "docs/SGN_Autograd_用户操作手册.md"
+requires-python = ">=3.14"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "zhugy-8086"}
+]
+keywords = [
+    "neural-network",
+    "integer-arithmetic",
+    "autograd",
+    "quantization",
+    "embedded-ml",
+    "simd"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+# 运行时依赖（必需）
+dependencies = [
+    "numpy>=1.24.0",
+]
+
+# ============================================================
+# 可选依赖组（pip install sgn[dev,quality]）
+# ============================================================
+[project.optional-dependencies]
+# 开发依赖：测试 + 调试
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0"
+]
+
+# 性能基准（v5.1.9 后未启用，注释保留）
+# benchmark = [
+#     "pytest-benchmark>=4.0.0"
+# ]
+
+# 代码质量
+quality = [
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "black>=23.0.0"
+]
+
+# 全部开发依赖合并
+all = [
+    "sgn[dev,quality]"
+]
+
+# 注：安全审计 2026-08-16 卫生清理——已删除 GUI（pygame-ce）与 CLI 入口点
+# （app.main / run.main）的残留注释配置，二者均随 SGN Lite 废弃于 legacy/。
+
+# ============================================================
+# 项目 URL（新仓库地址待创建后更新，安全审计 2026-08-16 B3-2）
+# ============================================================
+[project.urls]
+Documentation = "https://github.com/zhugy-8086/sgn/blob/main/docs/SGN_Autograd_用户操作手册.md"
+
+# ============================================================
+# setuptools 包发现
+# ============================================================
+[tool.setuptools]
+# 显式列出源码包，避免误打包 legacy/ / docs/ / 内部档案目录/
+# MSInt / int_semantics 已迁入 engine.sgn 内部子包（自包含）
+# 安全审计 2026-08-16 B3-5：补 engine.sgn.tests（pytest testpaths 引用）
+packages = [
+    "engine",
+    "engine.sgn",
+    "engine.sgn.msint",
+    "engine.sgn.msint._py",
+    "engine.sgn.int_semantics",
+    "engine.sgn.tests",
+]
+include-package-data = true
+
+[tool.setuptools.package-data]
+# 非 .py 资源随包分发（如 .pyd、字符库、配置模板等）
+engine = ["*.json", "*.txt"]
+"engine.sgn" = ["*.pyd", "*.dll"]
+
+# ============================================================
+# pytest 配置
+# ============================================================
+[tool.pytest.ini_options]
+testpaths = "engine/sgn/tests"
+addopts = "-v --tb=short"
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+# ============================================================
+# 代码质量工具配置
+# ============================================================
+[tool.black]
+line-length = 100
+target-version = ["py314"]
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # 暂时宽松，逐步加严
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["engine.sgn"]
+omit = ["legacy/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError"
+]
+show_missing = true

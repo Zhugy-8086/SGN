@@ -1,0 +1,335 @@
+# SGN SIMD 原语层：改进路线与工程避坑指南
+
+> **适用范围**：仅针对公开仓库中的 `simd/` 原语层（`simd_api.h` / `scalar.cpp` / `simd_dispatch.cpp` / `x86/*` / `arm/neon.cpp` / 测试与基准）。不涉及未公开的 `engine/` 部分。
+> **写作日期**：2026-09-03
+> **性质**：指导意见（含接口示意与错误示例），不是最终实现代码。
+
+---
+
+## 0. 一页总结
+
+当前 `simd/` 层是"点积 + 解码 + 归约"三类**单次指令宽度**的原语，缺的是"让数据复用起来的矩阵级运算"和"量化语义融合"。改进的顶层思路一句话：
+
+> **把"点积原语"升级为"量化 GEMM / 矩阵级微内核"，并把量化语义（打包、缩放、偏置）融进内核；同时把浮点归约做成跨后端可复现。**
+
+如果只做三件事，按序推荐：
+1. **GEMM/GEMV 微内核**（决定算力上限）；
+2. **4-bit 打包点积真正落地**（决定项目"整数/量化"特色是否成立）；
+3. **浮点归约可复现化**（决定正确性口碑，成本最低）。
+
+---
+
+## 1. 现状盘点：公开 simd/ 层有什么
+
+| 类别 | 原语 | 备注 |
+|---|---|---|
+| 整型点积 | `dot16`（int16×int16→int64） | madd 快速路径 + vpmuldq 回退 |
+| | `dot8`（uint8×int8→int64） | 选择链 scalar→avx2→avx_vnni→avx512vnni |
+| | `dot4`（预解包 u8×s8→int64） | **不负责解包**，输入须已满宽 |
+| 解码 | `decode_i16_f32` / `decode_i16_f32_packed16` | packed16 为连续 int16 布局 |
+| 浮点归约 | `sum_f32` / `sum_sq_dev_f32` / `sum_sumprod_f32` / `accum_f32` | 标注 `kRounding`（跨后端不逐位一致） |
+| 字节操作 | `reverse_bytes8` / `batch_reverse_u8` | |
+| nibble 解包 | `unpack_nibble_u/s` | **标量**，无 SIMD 版 |
+| 精度档位 | `PrimitiveId` / `PrecisionClass` / `primitive_precision_class()` | kBitExact（整型）/ kRounding（浮点归约） |
+| 后端 | scalar / sse2（≈scalar）/ avx2(dot,decode,reduce) / avx_vnni / avx512 / avx512vnni | `arm/neon.cpp` 为**空壳 TODO** |
+
+质量底子（已验证，应继续保持）：
+- 接口头只声明、不 include 平台头（immintrin.h / arm_neon.h 被封死在后端文件内）；
+- per-file ISA 编译 + 运行时 CPUID 门控 + 标量锚点常驻；
+- 整型原语 bit-exact、UBSan 干净、对拍测试 + CPUID 交叉校验齐全；
+- 基准 238/238 正确性、零警告、性能数据可复现。
+
+---
+
+## 2. 现状诊断：差距在哪
+
+1. **没有矩阵级运算**。只有一维 `dot`，每个元素只读一次、无复用，天然带宽受限（实测 dot16 ≈ 27% 峰值、dot8 ≈ 34%）。"高性能"的分水岭是 GEMM 级数据复用。
+2. **量化语义在"内核之外"**。4-bit 要调用方先解包（带宽红利丢失）；没有 quantize / scale / zero-point / bias 融合；解码、重量化、Python 桥接导致端到端慢。
+3. **浮点归约不可复现**。`kRounding` 多路累加 + 水平归约，跨后端结果漂移，与"断点续训逐位可复现"的目标冲突。
+4. **文档承诺与代码事实不符**。README 声称"x86/ARM 后端"，`neon.cpp` 是空壳。
+
+---
+
+## 3. 改进方向 A：新增计算原语（5 项）
+
+### 3.1 GEMM/GEMV 微内核（核心）
+
+**为什么**：只有矩阵乘有数据复用（A 的元素被 N 列复用、B 被 M 行复用），才能把峰值效率从 ~30% 拉起来。这是"原语"升级为"库"的分水岭。
+
+**接口示意**（与 `simd_api.h` 风格一致：裸指针 + size_t、noexcept、精度档标注）：
+
+```cpp
+namespace sgn::simd {
+// int8 GEMM：C[M][N] += A[M][K] * B[K][N]（行主；A: uint8 激活，B: int8 权重）
+// kBitExact。lda/ldb/ldc 为行 stride，支持任意布局切片。
+void gemm_i8(const uint8_t* A, const int8_t* B, int32_t* C,
+             size_t M, size_t N, size_t K,
+             size_t lda, size_t ldb, size_t ldc) noexcept;
+// int16 GEMM：C[M][N] += A[M][K] * B[K][N]（int16×int16→int64 累加）
+void gemm_i16(const int16_t* A, const int16_t* B, int64_t* C,
+              size_t M, size_t N, size_t K,
+              size_t lda, size_t ldb, size_t ldc) noexcept;
+// GEMV：LLM 推理核心，带宽受限，单独给一档
+void gemv_i8(const uint8_t* A, const int8_t* x, int32_t* y,
+             size_t M, size_t K, size_t lda) noexcept;
+}
+```
+
+**实现要点**（指导性，非代码答案）：
+- **分块（tiling）**：M/N/K 三维都分块，寄存器中放 `N_tile × K_unroll` 的累加器矩阵，最大化复用；
+- **K 维内层 unroll**：内层循环展开 4–8 步，抵消 load 延迟；
+- **B 的 K 维做转置/重排**：使 K 维访问连续（`vpermt2b` / 预转置到 C 缓冲），避免跨步 load；
+- **C 缓冲留在寄存器**，最后一次性水平归约写回；
+- **尾部**：M/N/K 非分块倍数时用标量锚点收尾，禁止漏算；
+- **多线程**：分块天然可 OpenMP 并行，但**先单核做对，再谈并行**。
+
+### 3.2 4-bit 打包点积真正落地
+
+**现状问题**：`dot4` 要求调用方预解包成满宽字节，跑的就是 dot8 内核（实测 57.3 vs 56.4 Mops/s 完全一致），"4 位带宽减半"的红利在解包一步丢光。
+
+**接口示意**：
+
+```cpp
+// 输入 a_packed 为 nibble 打包布局（每字节 2 个 4 位），内核内做解包 + 点积
+int64_t dot4_packed(const uint8_t* a_packed, const int8_t* s8, size_t K) noexcept;
+// 或先提供 SIMD 版解包原语（x86: vpshufb 查表两遍；AArch64: tbl）
+void unpack_nibble_simd(const uint8_t* packed, uint8_t* lo, uint8_t* hi, size_t n) noexcept;
+```
+
+**实现要点**：
+- x86 常规做法：`vpshufb` 用两张查找表分别展开**低 nibble / 高 nibble** 为两个 u8 向量，再走 `vpdpbusd`（有 VNNI）或 `vpmaddubsw`（AVX2 回退）；
+- **把"解包→重打包"的双倍内存往返消除**，让 4 位路径真正拿到带宽收益；
+- 保持 bit-exact：解包是无损的，误差只可能来自点积阶段（沿用 dot8 的饱和/溢出纪律）。
+
+### 3.3 量化语义融合（quantize / dequantize + scale / bias）
+
+**现状**：只有"解"（decode），没有"编"（quantize）；scale/zero-point/bias 都在上游做，桥接开销大。
+
+**接口示意**：
+
+```cpp
+// f32 → int8 量化：round(x/scale + zero_point) + 饱和到 [-128,127]
+void quantize_f32_i8(const float* src, int8_t* dst, size_t n,
+                     float scale, float zero_point) noexcept;
+// 带 scale 的量化点积（对称量化常见）：acc = sum((a-za)*(b-zb)) 后乘 scale
+// 提供"点积累加 + bias 叠加"的融合入口，避免结果回 Python 再算
+void dot_q8_scaled_accum(const uint8_t* a, const int8_t* b, size_t K,
+                         int32_t* acc, size_t n_acc, float scale) noexcept;
+```
+
+**实现要点**：
+- round 用 `vroundps` + 转整 + `vpmaxsd/vpminsd` 饱和；
+- 整型阶段保持 bit-exact，scale 乘加阶段标注 `kRounding` 并写清口径；
+- 融合进内核的意义：减少"内核 → 外部数组 → 再循环"的多次往返（文档自认端到端慢的主因之一）。
+
+### 3.4 归一化原语（rmsnorm / softmax / layernorm）
+
+**为什么**：量化推理/训练中 GEMM 之后必跟归一化；提供 fused 版本，避免"归约→回标量→再循环"。
+
+```cpp
+// y = (x - mean) * rsqrt(var + eps) * gamma + beta（layernorm 风格）
+void rmsnorm_f32(const float* x, float* y, size_t n,
+                 const float* gamma, float eps) noexcept; // rmsnorm 用 mean(x^2)
+void softmax_f32(const float* x, float* y, size_t n) noexcept; // max 减去 + exp + 归一
+```
+
+**实现要点**：
+- 归约（mean / mean-sq）复用现有归约纪律，两遍扫描（先求统计量再逐元素归一）或在线累加；
+- `rsqrt` 用 `vrsqrtps` + 一次 Newton 迭代提精度；
+- softmax 先减 max 防溢出，这是数值安全的"红线"。
+
+### 3.5 bf16 / fp16 点积
+
+**为什么**：现代服务器 CPU 有 AVX512-BF16 / fp16 指令；低成本扩展，为 bf16 训练/推理铺路。
+
+```cpp
+// bf16 点积（有 vdpbf16ps 用原生，否则转 int16 后走 vpdpbusd/回退）
+int32_t dot_bf16(const uint16_t* a, const uint16_t* b, size_t K) noexcept;
+```
+
+**实现要点**：
+- **先查目标平台有没有原生指令**，没有就走"转换 + 已有整型内核"回退，别硬凑；
+- 精度档按实际后端标注（bf16 尾数短，勿标 bit-exact 除非与标量锚点逐位一致）。
+
+---
+
+## 4. 改进方向 B：工程与正确性（4 项）
+
+### 4.1 浮点归约可复现化
+
+**问题**：`sum_f32` 等是 `kRounding`，多路累加器 + 水平归约，跨后端漂移。
+
+**改法（指导）**：
+- 方案一（推荐，简单）：**固定路数（如 4 路）+ 固定归约树**，写死归约顺序 → 跨后端逐位一致；
+- 方案二：Kahan / Neumaier 补偿累加，精度更高但慢一点；
+- 两种方案都**保留标量锚点对拍**，并把精度档从 `kRounding` 升为 `kBitExact`（同后端固定顺序下）。
+
+```cpp
+// 固定 4 路累加 + 固定归约树（示意）
+float sum_f32_repro(const float* p, size_t n, size_t stride) noexcept;
+```
+
+### 4.2 GEMM 基准 + roofline 效率标注
+
+- benchmark 现在只报"原语 Mops/s"，没有对理论峰值的效率（% peak）；
+- 加 GEMM 微内核基准，标注每档后端的 roofline 效率，并尽量与参照库（llama.cpp 量化 GEMM / oneDNN）做同口径对比；
+- 同时补**多线程强缩放**数据。
+
+### 4.3 ARM NEON 落地（或撤下宣称）
+
+- `neon.cpp` 是空壳，README 却写"x86/ARM 后端"；
+- AArch64 用 `SDOT`/`UDOT`（u8×s8→int32）做 dot8 不难；SVE2 可选；
+- **要么真做，要么把 README 改成"x86 已实现、ARM 规划中"**——文档承诺和代码事实不符是硬伤。
+
+### 4.4 对齐 / 跨步访问原语
+
+- 契约写死"统一 loadu、不假设对齐"——这保证了安全，但**没有给对齐场景留提速通道**；
+- 加 `aligned` 变体（如 `dot8_aligned`，前置条件"首地址按 64B 对齐"）和 `strided` 变体（支持转置权重/激活的跨步访问）；
+- 对齐变体必须在接口注释里写清前置条件，并加参数契约 assert（防越界/未对齐误用）。
+
+---
+
+## 5. 落地顺序建议
+
+| 阶段 | 做什么 | 理由 |
+|---|---|---|
+| 一周内（quick win） | 4.2 GEMM 基准+roofline；4.1 可复现归约；3.3 quantize/scale 融合 | 成本低，立刻提升可信度与正确性 |
+| 中期（核心） | 3.1 GEMM 微内核；3.2 4-bit 打包；3.4 归一化原语 | 决定这层能否升级成"库" |
+| 长期 | 4.3 ARM NEON；3.5 bf16；4.4 对齐/stride | 平台扩展与打磨 |
+
+---
+
+## 6. 代码组织与文件拆分建议（指导性）
+
+### 6.1 分层原则
+
+```
+simd_api.h          ← 接口层：只声明 + 契约注释，禁止 include 平台头
+scalar.cpp          ← 标量锚点（正确性参照），常驻编译，不挂 ISA 宏
+simd_dispatch.cpp   ← 调度层：集中做 CPUID 检测 + 符号选择，实现文件不自行决策
+x86/<isa>_<domain>  ← 后端实现：按"指令集 × 原语域"切文件，per-file ISA 编译
+arm/neon.cpp        ← ARM 后端（当前空壳，落地前保持标量锚点）
+*_test.cpp          ← 正确性/边界测试（对拍标量锚点，UBSan 可跑）
+*_benchmark.cpp     ← 性能基准（独立 main，避免与测试互相干扰）
+```
+
+**关键纪律**：
+- **接口头是唯一跨文件依赖**：实现文件与调用方都只 include `simd_api.h`，平台细节封死在各自 .cpp；
+- **一个文件 = 一个指令集域**：别把 AVX2 和 AVX-512 混在一个翻译单元，否则 per-file 编译选项没法给；
+- **按"域"再拆**（本项目已做对）：`avx2_dot.cpp / avx2_decode.cpp / avx2_reduce.cpp`，而不是一个巨大的 `avx2.cpp`——单文件过大、只改一点就要重编全部 ISA 路径；
+- **测试与基准两个 main 分开链接**（本项目已做对）：测试跑 UBSan、基准跑 -O3，互不污染。
+
+### 6.2 新增一个原语的标准动作（流程）
+
+1. **先冻结接口**：在 `simd_api.h` 里声明签名 + 写清契约（前置条件、对齐假设、精度档、是否 bit-exact）——即项目已用的 Step 0 做法；
+2. **先写标量锚点**：`scalar.cpp` 里给参考实现，作为正确性对照；
+3. **再写 SIMD 实现**：按目标 ISA 建文件，per-file 编译选项；
+4. **调度层接线**：CPUID 检测 + 符号选择，**不要**让实现文件自己判断走不走；
+5. **测试先行**：边界 + 饱和/满幅对拍测试，UBSan 必须干净；
+6. **基准跟进**：进 benchmark，并标注对峰值的效率。
+
+---
+
+## 7. 最不该写的低级错误（重点避坑清单）
+
+> 下面每条都是"这类项目真实踩过的坑"，直接说**最不应该的写法**与正确方向。不是禁止清单，是"最值钱的几条别犯"。
+
+### 7.1 指令集与运行时门控
+
+**① 全局 `-mavx2 -mavxvnni` 一把梭**
+- 错误：CMake 全局加 `-mavx2`，编译出的二进制在无 AVX2 的 CPU 上直接 illegal instruction 崩溃。
+- 正确：全局只有 `-O3`，指令集下沉到 per-file 编译选项；运行时 CPUID 检测选后端；标量锚点常驻兜底。
+
+**② CPUID 检测读错位（本项目犯过）**
+- 错误：把 AVX-VNNI 检测写在 `subleaf 0` 的 `ECX[4]`（那是 OSPKE），读错位导致 OSPKE=0 的机器上 dot8/dot4 **静默**落标量，性能掉 ~30× 且无任何提示。
+- 正确：AVX-VNNI 是 `leaf 7 subleaf 1` 的 `EAX[4]`；检测结果要配**独立的 raw CPUID 交叉校验测试**（本项目已补），防止 register/subleaf 误读。
+
+**③ 检测到指令集却静默走不到对应内核**
+- 错误：检测到 VNNI，但 dispatch 顺序/符号表漏了 VNNI 实现，静默回退标量，性能丢失无告警。
+- 正确：dispatch 里对"期望后端 vs 实际选择"打日志或断言；`SGN_KERNEL_BACKEND` 未知取值要告警后忽略（本项目已做），**不要静默**。
+
+### 7.2 bit-exact 与溢出
+
+**④ 8-bit 点积用 `_mm256_maddubs_epi16` 直接累加**
+- 错误：`maddubs` 把相邻两个 `u8×s8` 乘积相加，两个满幅（255×128）乘积和 = 65280 > int16 上限 32767，**饱和**，破坏 bit-exact。
+- 正确：有 VNNI 用 `vpdpbusd`（u8×s8→int32 精确）；只有 AVX2 时用 `vpmaddubsw` 并对 `a≥128` 的批做精确回退（本项目 9/2 已做对）。
+
+**⑤ dot16 的 `_mm256_madd_epi16` 溢出**
+- 错误：`madd_epi16` 相邻两个 int16 乘积求和，`-32768×-32768` 这类 pair 和溢出 int32。
+- 正确：批内检测 `-32768`，有则回退 `vpmuldq` 精确路径（本项目已做对）。
+
+**⑥ 把浮点归约当 bit-exact 用**
+- 错误：`sum_f32` 多路累加器 + 水平归约，累加顺序不定，却拿去对比/复现。
+- 正确：要么标 `kRounding` 并在文档声明"跨后端有漂移"，要么固定累加树/Kahan 升成可复现。
+
+### 7.3 指针、边界与对齐
+
+**⑦ 用 `load` 而不是 `loadu` 读未对齐指针**
+- 错误：契约说"不假设对齐"，却写 `_mm256_load_si256`（要求 32B 对齐），传未对齐数据直接 crash。
+- 正确：接口承诺"不假设对齐"就用 `loadu`；提供 aligned 变体时，接口注释写清"须 64B 对齐"并加 assert。
+
+**⑧ n=0 时的 `data()` 空指针（本项目犯过）**
+- 错误：`std::vector` 空时 `data()` 返回 `nullptr`，`memcmp(nullptr, ..., 0)` 参数声明 nonnull，size=0 也是 UB（UBSan 抓不到但标准上是 UB）。
+- 正确：`n==0` 短路；让 `n` 从 0、1 起都进测试。
+
+**⑨ 漏掉尾部残量**
+- 错误：只处理 `i < K - K%16` 的主循环，`K%16` 的尾巴没算，结果悄悄错。
+- 正确：尾部用标量锚点收尾；对拍测试覆盖 `K = {1,2,15,16,17,31,32,33}` 等关键边界。
+
+**⑩ 越界读的"习惯性 +1"**
+- 错误：为对齐方便读 `p[i+7]` 之类的越界访问，或 `reverse_bytes8` 之类按块处理时 `n` 从 1 起没做参数契约检查。
+- 正确：入口加参数契约 assert（本项目 9/2 已补），防越界读/移位 UB。
+
+### 7.4 归约、打包与语义
+
+**⑪ 打包布局语义不清**
+- 错误：`dot4` 明明不负责解包，接口名却叫 dot4，调用方以为传打包数据就行，结果语义全错。
+- 正确：接口注释写清"输入须已预解包为满宽字节"，或直接改名/区分 `dot4_packed`，用类型把契约说死。
+
+**⑫ 文件命名与指令集不符**
+- 错误：`ssse3.cpp` 里实际用了 `_mm256_*`（AVX2），文件名误导静态分析/阅读者（本项目自己注释承认过）。
+- 正确：AVX2 部分拆到 `avx2_*`，`ssse3.cpp` 只留真 SSSE3；或改名。
+
+**⑬ 符号存在性靠注释维系**
+- 错误：`extern "C" const Dot16Fn dot16_avx512;` 的定义在单独 TU、靠 CMake 文件级选项才有，缺构建期校验——换平台/裁剪链接直接 undefined reference。
+- 正确：加 `static_assert`/构建期检查，或把后端封装成可选组件，缺失时编译期明确报错。
+
+### 7.5 测试与基准
+
+**⑭ benchmark 被编译器优化掉**
+- 错误：`volatile int64_t sink; sink += dot(...)` 是 C++17 弃用的复合赋值，且 volatile 用法不当导致数据被优化或结果不可信。
+- 正确：`sink = sink + dot(...)`；warmup + 多轮取均值（本项目已做）。
+
+**⑮ 只测 happy path**
+- 错误：只测随机常规值，不测边界/饱和/满幅，`-32768/32767`、`255/128`、`0` 全漏。
+- 正确：对拍测试覆盖饱和对抗与满幅极端值（本项目 boundary_test 已做对）。
+
+**⑯ 缺标量锚点对照**
+- 错误：SIMD 路径没有和标量逐位对拍，改坏了自己不知道。
+- 正确：`scalar.cpp` 常驻作为正确性锚点，每个 SIMD 原语都配"SIMD vs scalar 逐位一致"测试。
+
+### 7.6 仓库卫生
+
+**⑰ 把构建产物提交进 git**
+- 错误：`.obj / .exe / CMake 缓存 / ninja / 压缩包` 进版本库（本项目真实存在：`simd/build/` 下十几个二进制），污染 diff、撑爆仓库。
+- 正确：`.gitignore` 掉 `build/`、`*.o`、`*.obj`、`*.exe`、CMake 缓存，只提交源码与文档。
+
+---
+
+## 8. 测试基线建议（每个新原语的"验收下限"）
+
+1. **正确性**：SIMD vs 标量锚点逐位一致（整型必达）；边界 `n={0,1,2,15,16,17,31,32,33}`；饱和/满幅对抗用例；
+2. **UB 检查**：`-fsanitize=undefined -fno-sanitize-recover=all` 跑边界测试，必须零报告；
+3. **CPU 兼容**：CPUID 交叉校验（独立 raw CPUID vs 调度器期望）；标量/低档后端强制跑一遍对拍；
+4. **性能**：基准带 warmup + 多轮均值，标注对理论峰值的效率（roofline）；
+5. **可复现**：浮点原语注明精度档（kBitExact / kRounding），跨后端口径写清。
+
+---
+
+## 9. 已做对的、别改坏的好习惯
+
+- 接口头不含平台头、纯声明 + 契约注释（继续保持）；
+- per-file ISA + 运行时 CPUID 门控 + 标量锚点常驻（继续保持）；
+- 整型原语 bit-exact、UBSan 干净、对拍测试 + CPUID 交叉校验（继续保持）；
+- 测试与基准两个 main 分开、构建产物不入库的纪律（**这条目前没做到，见 7.6 ⑰**）；
+- 文档留档（速度测试归档、源码审查报告、白皮书）——这是个人项目里少见的好习惯，值得保留并把它变成"每个新原语的标配"。

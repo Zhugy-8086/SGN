@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:  # 允许手动触发
+
+# 取消同分支上正在进行的冗余运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 安全审计 2026-08-16 B4-1~B4-6 全量重写：
+#   - Python 矩阵 3.10-3.13 → 3.14（.pyd 为 cp314，旧版本 import 必败）
+#   - 冒烟测试改用活跃 API（原 engine.SGNCore/engine.config/app.* 已迁 legacy）
+#   - pytest 路径 tests/ → engine/sgn/tests（pyproject testpaths）
+#   - 补 CMake 构建步骤（.pyd 未编译则全部 import 失败）
+#   - --cov=app → --cov=engine.sgn
+#   - 移除指向 legacy 文件的 --ignore 列表
+# 说明：Ubuntu 上 AVX2 由 GitHub runner 虚拟机 CPU 提供（近年均支持），
+#       import 时的 cpuid 检测（安全审计 I2）会给出明确报错。
+
+jobs:
+  # ============================================================
+  # 构建与测试：Python 3.14（.pyd 唯一 ABI）
+  # ============================================================
+  test:
+    name: build + pytest (${{ matrix.os }} · py3.14)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: 安装 Python 依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pybind11
+
+      - name: 安装编译工具（Ubuntu）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libomp-dev
+
+      - name: 安装编译工具（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # LLVM + CMake + Ninja（winget 在 runner 上可用）
+          winget install --id LLVM.LLVM --accept-package-agreements --accept-source-agreements
+          winget install --id Kitware.CMake --accept-package-agreements --accept-source-agreements
+          winget install --id Ninja-build.Ninja --accept-package-agreements --accept-source-agreements
+          echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "C:\Program Files\CMake\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          echo "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: 构建 sgn .pyd（CMake + Clang）
+        shell: bash
+        run: |
+          cd engine/sgn
+          cmake -B build -G Ninja \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Dpybind11_DIR="$(python -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+          cmake --build build
+
+      - name: 冒烟测试 - 引擎导入 + 自检
+        run: |
+          python -c "import engine.sgn as sgn; assert sgn.test(), 'sgn.test() 自检失败'; print('OK: sgn 引擎导入 + 自检通过')"
+
+      - name: 跑全测试套件
+        run: |
+          python -m pytest engine/sgn/tests \
+            --tb=short \
+            --durations=10 \
+            --maxfail=5 \
+            -q
+
+      - name: 上传测试报告（仅失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report-${{ matrix.os }}
+          path: |
+            .pytest_cache/
+            **/__pycache__/
+          retention-days: 7
+
+  # ============================================================
+  # 覆盖率报告（ubuntu 单一环境）
+  # ============================================================
+  coverage:
+    name: 覆盖率报告
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pybind11
+
+      - name: 安装编译工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build libomp-dev
+
+      - name: 构建 sgn .pyd
+        run: |
+          cd engine/sgn
+          cmake -B build -G Ninja \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Dpybind11_DIR="$(python -c 'import pybind11; print(pybind11.get_cmake_dir())')"
+          cmake --build build
+
+      - name: 跑覆盖率测试
+        run: |
+          python -m pytest engine/sgn/tests \
+            --cov=engine.sgn \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            -q
+
+      - name: 上传 coverage.xml
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 14
