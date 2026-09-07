@@ -39,6 +39,9 @@ sgn_crash_*.log
 # 编译产物（未归入 build/ 的本地可执行/符号文件不入库）
 *.exe
 *.pdb
+# Debug 测试独立构建目录（test_tape_hybrid / test_cpuid_caps_mock 等 Debug 块目标，
+# 2026-09-07：测试目标仅 Debug 构建定义，产物不入库）
+engine/sgn/build_debug/
 # 源码/README 入库，编译出的二进制不入库；simd 层 2026-09-03 迁入 mkern/ 微内核层）
 
 # 外部测试产物（他人对提交前版本的测试记录，非本仓库内容，不入库）

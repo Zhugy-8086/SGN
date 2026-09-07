@@ -1,4 +1,4 @@
-// ops_nn.h - 神经网络算子声明（Phase 3）
+﻿// ops_nn.h - 神经网络算子声明（Phase 3）
 //
 // GPU 移植注意事项（2026-08-02）：
 //   GPU 不支持 C++ 异常（throw），当前所有算子函数的错误处理使用 throw。
@@ -300,6 +300,38 @@ private:
     static QuantConfig qcfg_;       // 前向 STE（默认 8bit）
     static QuantConfig bwd_qcfg_;   // 反向 GEF/SR/A1（默认 16bit）
     static bool pair_grad_store_;
+};
+
+// ============================================================================
+// QuantConfigGuard：前向/反向量化配置 RAII 作用域守卫
+// （2026-09-07 外部审查 A3，方案 4.3 精简版）：
+//   构造保存 qcfg_/bwd_qcfg_ 副本并写入新值，析构无条件恢复——异常安全。
+//   消除"前向切位宽意外覆写反向配置"类 bug 的复发面（链路核查 2026-08-21
+//   P0-2 的根因即两配置共用；分离后守卫把"配对设置"变成原语）。
+//   嵌套守卫天然支持（内层析构恢复外层的进入值）。
+//   职责边界：仅量化配置；BackwardStrategy 切换是显式动作（StrategyContext::
+//   set），不纳入守卫——策略切换改变的是梯度路径语义，静默作用域化反而危险。
+// 用法：
+//   { QuantConfigGuard g({8, 4.0f}, {16, 4.0f});  // fwd bits=8, bwd bits=16
+//     ... forward/backward ... }                  // 离开作用域自动恢复
+class QuantConfigGuard {
+public:
+    QuantConfigGuard(QuantConfig fwd, QuantConfig bwd)
+        : saved_fwd_(StrategyContext::quant_config()),
+          saved_bwd_(StrategyContext::bwd_quant_config()) {
+        StrategyContext::quant_config() = fwd;
+        StrategyContext::bwd_quant_config() = bwd;
+    }
+    ~QuantConfigGuard() {
+        StrategyContext::quant_config() = saved_fwd_;
+        StrategyContext::bwd_quant_config() = saved_bwd_;
+    }
+    QuantConfigGuard(const QuantConfigGuard&) = delete;
+    QuantConfigGuard& operator=(const QuantConfigGuard&) = delete;
+
+private:
+    QuantConfig saved_fwd_;
+    QuantConfig saved_bwd_;
 };
 
 }  // namespace sgn_autograd

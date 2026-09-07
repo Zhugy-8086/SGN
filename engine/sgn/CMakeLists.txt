@@ -8,15 +8,15 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ============================================================
 # 平台引导（2026-09-07 EPYC 部署教训：Linux 用户误闯主构建会收到
 # 混乱的 Clang/libomp 报错——engine 主构建是 Windows 工作流
-# （pybind11 + LLVM libomp + Python ABI），Linux 走内核层独立构建）
+# （pybind11 + LLVM libomp + Python ABI cp314），Linux 走内核层独立构建）
 # ============================================================
 if(NOT WIN32)
     message(FATAL_ERROR
-        "engine 主构建目前仅支持 Windows（pybind11 + LLVM libomp + Python ABI）。
-"        "  Linux 请使用内核层独立构建（无 pybind11/libomp/Python 依赖）：
-"        "    cd engine/sgn/mkern/simd   && ./build_remote.sh --bench
-"        "    cd engine/sgn/mkern/nested && ./build_remote.sh
-"        "    cd engine/sgn/mkern/gemm   && cmake -B build -G Ninja && cmake --build build)
+        "engine 主构建目前仅支持 Windows（pybind11 + LLVM libomp + Python ABI）。\n"
+        "  Linux 请使用内核层独立构建（无 pybind11/libomp/Python 依赖）：\n"
+        "    cd engine/sgn/mkern/simd   && ./build_remote.sh --bench\n"
+        "    cd engine/sgn/mkern/nested && ./build_remote.sh\n"
+        "    cd engine/sgn/mkern/gemm   && cmake -B build -G Ninja && cmake --build build")
 endif()
 
 # ============================================================
@@ -412,4 +412,34 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
         PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512bw;-mavx512vl;-ffp-contract=off")
     set_source_files_properties(
         mkern/simd/x86/avx512vnni.cpp PROPERTIES COMPILE_OPTIONS "-mavx512f;-mavx512bw;-mavx512vl;-mavx512vnni")
+
+    # test_tape_hybrid: tape 混合语义守卫（2026-09-07 外部审查 A2/A3/A1 实证）——
+    # pair↔float 切换缓存语义（F1 入口清 pair / grads_ 累加）+ QuantConfigGuard
+    # RAII 恢复 + clip_sigma 惰性实证（max-scale 下 sigma=4 ≡ sigma=1e30）
+    add_executable(test_tape_hybrid
+        tests/architecture/test_tape_hybrid.cpp
+        autograd/tensor.cpp autograd/ops.cpp autograd/ops_nn.cpp autograd/autograd.cpp
+        dispatch/registry.cpp
+        msint/pair_grad_carrier.cpp
+        autograd/sr_kernel.cpp
+        mkern/simd/scalar.cpp mkern/simd/simd_dispatch.cpp
+        mkern/simd/x86/avx2_dot.cpp mkern/simd/x86/avx2_decode.cpp mkern/simd/x86/avx2_reduce.cpp
+        mkern/simd/x86/avxvnni.cpp mkern/simd/x86/ssse3.cpp
+        mkern/simd/x86/avx512.cpp mkern/simd/x86/avx512vnni.cpp mkern/simd/arm/neon.cpp)
+    target_include_directories(test_tape_hybrid PRIVATE ${AUTOGRAD_INCLUDE_DIRS})
+    # ops_nn.cpp（registry 的 conv AVX2 内核宿主）含 #pragma omp → 与 test_phase3 同模式
+    target_compile_options(test_tape_hybrid PRIVATE -fopenmp=libomp)
+    target_link_libraries(test_tape_hybrid PRIVATE "${LIBOMP_LIB}")
+
+    # test_cpuid_caps_mock: CPUID caps 纯派生 mock 回归（外部审查 A4）——
+    # Arrow Lake OSPKE leaf 误读 bug 固化。测试 TU 直接 include
+    # simd_dispatch.cpp 触达匿名命名空间纯派生函数 caps_from_registers，
+    # 故本目标**不含** simd_dispatch.cpp 源（防 ODR 重复符号）。
+    add_executable(test_cpuid_caps_mock
+        mkern/simd/test_cpuid_caps_mock.cpp
+        mkern/simd/scalar.cpp
+        mkern/simd/x86/avx2_dot.cpp mkern/simd/x86/avx2_decode.cpp mkern/simd/x86/avx2_reduce.cpp
+        mkern/simd/x86/avxvnni.cpp mkern/simd/x86/ssse3.cpp
+        mkern/simd/x86/avx512.cpp mkern/simd/x86/avx512vnni.cpp mkern/simd/arm/neon.cpp)
+    target_include_directories(test_cpuid_caps_mock PRIVATE ${AUTOGRAD_INCLUDE_DIRS})
 endif()

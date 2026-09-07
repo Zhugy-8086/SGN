@@ -15,18 +15,60 @@
 // 与跨编译器逐位一致由 nested_boundary_test 实证。Python 侧 RNG 流不经过
 // sr_kernel（SplitMix64 计数器式，自包含）。
 //
-// 性能注：list 转换与 split_dot 绑定同口径（项目惯例）；热路径 numpy 零拷贝
-// 视 §五.5 接线后的实际 profile 再议。
+// 性能注：list 转换与 split_dot 绑定同口径（项目惯例）；numpy 零拷贝热路径
+// **已落地**（2026-09-07 层 2 Phase 2a 遗留项收口）：nested_quant_i32_np /
+// nested_dequant_np —— 入侧 1-D C-contiguous + 精确 dtype 严格校验（不符
+// ValueError 指引走 list 版，不静默转换/拷贝；裸 py::array_t caster 实证会
+// 静默宽容，热路径要显式报错），出侧 numpy 数组内核直写。与 list 版同内核
+// 逐位一致（tests/test_leveled_state.py 钉死）。
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
 #include "mkern/nested/nested_api.h"
 
 namespace py = pybind11;
+
+namespace {
+
+// 1-D numpy 零拷贝严格契约（与 simd_bindings.cpp 的 np1d_ptr 同纪律同实现，
+// 各文件自包含不新增头文件）。校验纳秒级。
+template <typename T>
+const T* np1d_ptr(py::handle src, py::ssize_t* n, const char* who) {
+    if (!py::isinstance<py::array>(src)) {
+        throw py::value_error(std::string(who) +
+                              ": 须 1-D C-contiguous numpy 数组（精确 dtype），"
+                              "Python list 请走无后缀版");
+    }
+    py::array a = py::reinterpret_borrow<py::array>(src);
+    if (a.ndim() != 1 || !a.dtype().is(py::dtype::of<T>()) ||
+        !(a.flags() & py::array::c_style)) {
+        throw py::value_error(
+            std::string(who) +
+            ": 零拷贝契约要求 1-D C-contiguous + 精确 dtype（" +
+            py::str(py::dtype::of<T>()).cast<std::string>() +
+            "）；非连续切片/错 dtype 请先 np.ascontiguousarray(...).astype(...) "
+            "或走无后缀 list 版");
+    }
+    *n = a.size();
+    return static_cast<const T*>(a.data());
+}
+
+// 出侧 numpy 数组构造：分配 + memset 保险（内核写全量契约）+ 返回。
+template <typename T>
+py::array_t<T> np1d_out(py::ssize_t n) {
+    py::array_t<T> out(n);
+    std::memset(out.mutable_data(), 0, sizeof(T) * static_cast<size_t>(n));
+    return out;
+}
+
+}  // namespace
 
 void register_nested(py::module_& m) {
     auto nested = m.def_submodule(
@@ -72,6 +114,49 @@ void register_nested(py::module_& m) {
         "level 档 dequant = 对码字 RTN 截位（half-to-even），输出 list[float]。\n"
         "out ∈ u·2^(32−level)·ℤ 且为 code·u 的最近粗格点（格嵌套不变量）；\n"
         "level=32 恒等（out = code·u）。对任意 int64 码字良定义（含 int32 域外）。");
+
+    // ---- numpy 零拷贝版（热路径；与 list 版同内核逐位一致）----
+
+    nested.def(
+        "nested_quant_i32_np",
+        [](py::handle h, float u, uint64_t seed) {
+            py::ssize_t n = 0;
+            const float* hp = np1d_ptr<float>(h, &n, "nested_quant_i32_np: h");
+            py::array_t<int64_t> out = np1d_out<int64_t>(n);
+            sgn::mkern::nested::nested_quant_i32(
+                static_cast<int64_t*>(out.mutable_data()), hp,
+                static_cast<int64_t>(n), u, seed);
+            return out;
+        },
+        py::arg("h"), py::arg("u"), py::arg("seed"),
+        "nested_quant_i32 的 numpy 零拷贝版：float32[N]（C-contiguous）入侧\n"
+        "指针直读，出侧 int64[N] numpy 数组内核直写。**u 保持 C++ float、seed\n"
+        "保持 uint64_t**（f32 IEEE 舍入口径与同 step 各样本共用 seed 是冻结\n"
+        "规格，与 list 版逐字一致——RNG 流 SplitMix64(seed+φ·i) 按缓冲下标计数）。\n"
+        "量化语义同 list 版（floor + Bernoulli SR、±2^31 饱和、h=0 吸收态）。\n"
+        "与 list 版调同一 C++ 内核，逐位一致。");
+
+    nested.def(
+        "nested_dequant_np",
+        [](py::handle code, float u, int level) {
+            if (level != 4 && level != 8 && level != 16 && level != 32) {
+                throw py::value_error(
+                    "level must be one of {4, 8, 16, 32}, got " +
+                    std::to_string(level));
+            }
+            py::ssize_t n = 0;
+            const int64_t* cp =
+                np1d_ptr<int64_t>(code, &n, "nested_dequant_np: code");
+            py::array_t<float> out = np1d_out<float>(n);
+            sgn::mkern::nested::nested_dequant(
+                static_cast<float*>(out.mutable_data()), cp,
+                static_cast<int64_t>(n), u, level);
+            return out;
+        },
+        py::arg("code"), py::arg("u"), py::arg("level"),
+        "nested_dequant 的 numpy 零拷贝版：int64[N] 码字入侧指针直读，出侧\n"
+        "float32[N] numpy 数组内核直写（f32→f64 拓宽精确，消费侧语义同 list 版\n"
+        "的 Python float）。level 校验 ValueError 原样保留。逐位一致。");
 
     nested.def(
         "nested_view_codes",

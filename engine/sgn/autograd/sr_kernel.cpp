@@ -1,4 +1,4 @@
-// sr_kernel.cpp - SR 量化共享内核（唯一实现点）
+﻿// sr_kernel.cpp - SR 量化共享内核（唯一实现点）
 //
 // 2026-09-02 审查 F5（二期）：sr_quantize_grad（float 路径，backward_strategy.h
 // 薄壳）与 sr_quantize_to_pair（int8 对路径，msint/pair_grad_carrier.cpp 薄壳）
@@ -31,6 +31,14 @@ void sr_quantize_q(const float* g, size_t n, float scale, float clip_sigma,
         return;
     }
     const float inv_scale = 1.0f / scale;
+    // clip_bound 惰性注记（2026-09-07 外部审查 A1 实证）：现役调用方 scale
+    // = max_abs/max_val（per-tensor max 口径，backward_strategy.h BS 口径），
+    // 代入得 clip_bound = clip_sigma·max_abs ≥ max_abs ≥ |g_i| —— 即 max-scale
+    // 策略下本 clip 分支**恒不触发**（clip_sigma=4 是死参数）。这是语义上
+    // 自洽的：若 clip 真触发，截断无补偿会破坏 SR 无偏性（P(向上)=frac 的
+    // 均匀性被非对称截断打破）。参数保留的原因：未来若引入估计式 scale
+    // 策略（running/P95，见外部审查方案 4.2），clip 才成为 outlier 防护的
+    // 承重墙；届时本行语义从"恒不触发"变为"按 sigma 截断"。
     const float clip_bound = clip_sigma * scale * max_val;
     auto& rng = sr_rng();
     std::uniform_real_distribution<float> dist(0.0f, 1.0f);

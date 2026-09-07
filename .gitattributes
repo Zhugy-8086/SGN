@@ -1,4 +1,5 @@
-# eol 纪律（2026-09-07 EPYC 远程部署：CRLF shell 脚本在 Linux 报 '$''''': command not found'）
+﻿# 换行符纪律（2026-09-07 EPYC 远程部署教训：CRLF shell 脚本在 Linux 报
+# `$'\r': command not found`）
 *.sh text eol=lf
 *.py text eol=lf
 *.cpp text eol=lf

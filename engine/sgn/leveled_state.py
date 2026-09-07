@@ -1,4 +1,4 @@
-# leveled_state.py - LeveledState 状态布局（层 2 接线 Phase 2a，设计文档 §四/§五）
+﻿# leveled_state.py - LeveledState 状态布局（层 2 接线 Phase 2a，设计文档 §四/§五）
 #
 # 设计依据：docs/ltc_cfc_dynamic_quantization/层2接线设计_LeveledState状态布局_2026_09_06.md
 #   - 每样本 u_b = max|h|·2⁻³¹（D3 满幅口径，同源冻结；u 与 max 同一函数产出）
@@ -12,11 +12,15 @@
 # 方向状态：开环推理路径（层 2），无梯度消费（floor 读法梯度禁令不变），
 #           训练走层 1 配方（state_precision_recipe.py，torch STE）。
 #
-# 边界（骨架版，W5-W7 验收前）：
-#   - 点积走 numpy int64 参考实现（_ref_dot8/_ref_dot4_packed）；native dot8/
-#     dot4_packed 绑定落地后由 NativeDots 适配位替换（接口已留）
-#   - 每样本循环调用 mkern_nested（B 组 Python 循环）——正确性骨架，
-#     批量化属于 W9/系统账批次的性能项
+# 边界（2026-09-07 零拷贝收口后）：
+#   - 热路径走 sgn.mkern_nested/nested_quant_i32_np、nested_dequant_np 与
+#     sgn.mkern_simd/dot8_np、unpack_nibble_u_np（1-D C-contiguous 精确 dtype
+#     严格契约，不符 ValueError）；_np 缺失（getattr=None，monkeypatch 友好）
+#     回退 list 版——两路径同 C++ 内核逐位一致（tests/test_leveled_state.py）
+#   - forward_chunk 主存储 h_code_t (B,N) 行主（逐样本行 = 连续零拷贝切片），
+#     读侧 h_code = h_code_t.T 视图——数值语义不变（RNG 流按缓冲下标计数，
+#     转置不改列内元素顺序）
+#   - 每样本循环调用 mkern_nested（B 组 Python 循环）——批量化属于系统账批次
 
 import numpy as np
 
@@ -55,6 +59,7 @@ class LeveledStateBatch:
         self.us = np.zeros(self.b, dtype=np.float32)
         self.max_abs = np.zeros(self.b, dtype=np.float32)
         mk = _native()
+        q_np = getattr(mk, "nested_quant_i32_np", None)   # None 视为缺失 → 回退 list 版
         for j in range(b):
             col = np.ascontiguousarray(h[:, j])
             m = float(np.max(np.abs(col))) if self.n else 0.0
@@ -63,9 +68,12 @@ class LeveledStateBatch:
             self.us[j] = u
             if u <= 0.0:
                 continue                                 # 零样本 → 全零码字
-            self.codes[j] = np.asarray(
-                mk.nested_quant_i32(col.tolist(), u, int(seeds[j])),
-                dtype=np.int64)
+            if q_np is not None:
+                self.codes[j] = q_np(col, u, int(seeds[j]))
+            else:
+                self.codes[j] = np.asarray(
+                    mk.nested_quant_i32(col.tolist(), u, int(seeds[j])),
+                    dtype=np.int64)
 
     # ---- floor 平面提取（域内定理：设计文档 §三.2；纯整数移位）----
     def q8_u8_plane(self):
@@ -117,12 +125,21 @@ class LeveledStateBatch:
         q4_u4 = self.q4_u4_plane()
         k8 = groups["q8"]
         k4 = groups["q4"]
+        # _np 零拷贝探测（None 视为缺失 → 回退 list 版，monkeypatch 友好）
+        dot8_np = (getattr(native, "dot8_np", None)
+                   if native is not None else None)
+        unpack_np = (getattr(native, "unpack_nibble_u_np", None)
+                     if native is not None else None)
         for j in range(self.b):
             if k8.any():
                 if native is not None:
+                    a8 = q8[j][k8]     # bool 掩码索引 → 新 C-contiguous 数组（严格契约满足）
                     for i in range(n_out):
-                        out[j, i] += native.dot8(q8[j][k8], w8[i][k8]) \
-                            - _ZERO_POINT_Q8 * int(w8[i][k8].astype(np.int64).sum())
+                        w_row = w8[i][k8]
+                        dot = (dot8_np(a8, w_row) if dot8_np is not None
+                               else native.dot8(a8, w_row))
+                        out[j, i] += dot \
+                            - _ZERO_POINT_Q8 * int(w_row.astype(np.int64).sum())
                 else:
                     out[j] += (q8[j][k8].astype(np.int64)
                                @ w8[:, k8].T.astype(np.int64)) \
@@ -130,12 +147,19 @@ class LeveledStateBatch:
             if k4.any():
                 if native is not None:
                     packed = self.q4_u4_packed()[j]
-                    unpacked = np.asarray(
-                        native.unpack_nibble_u(packed.tolist()), dtype=np.uint8)
+                    if unpack_np is not None:
+                        unpacked = unpack_np(packed)     # numpy u8[2K]
+                    else:
+                        unpacked = np.asarray(
+                            native.unpack_nibble_u(packed.tolist()), dtype=np.uint8)
                     unpacked = unpacked[: self.n]           # 去掉补位
+                    a4 = unpacked[k4]                       # bool 掩码 → C-contiguous
                     for i in range(n_out):
-                        out[j, i] += native.dot8(unpacked[k4], w4[i][k4]) \
-                            - _ZERO_POINT_Q4 * int(w4[i][k4].astype(np.int64).sum())
+                        w_row = w4[i][k4]
+                        dot = (dot8_np(a4, w_row) if dot8_np is not None
+                               else native.dot8(a4, w_row))
+                        out[j, i] += dot \
+                            - _ZERO_POINT_Q4 * int(w_row.astype(np.int64).sum())
                 else:
                     out[j] += (q4_u4[j][k4].astype(np.int64)
                                @ w4[:, k4].T.astype(np.int64)) \
@@ -238,11 +262,17 @@ class LeveledLTCInference:
             if self.k4.size:
                 h[self.k4] = (h_code[self.k4] >> 28) * _LEVEL_STEP[4] * u[None, :]
             return h
+        mk = _native()
+        dq_np = getattr(mk, "nested_dequant_np", None)
+        hc_t = np.ascontiguousarray(h_code.T)   # (B,N) 行主；h_code 本为 h_code_t.T 视图时 no-op
         for s in range(h_code.shape[1]):
             if u[s] > 0:
-                h[:, s] = np.asarray(
-                    _native().nested_dequant(h_code[:, s].tolist(),
-                                             float(u[s]), 8), dtype=np.float64)
+                if dq_np is not None:
+                    h[:, s] = dq_np(hc_t[s], float(u[s]), 8)   # f32→f64 拓宽精确
+                else:
+                    h[:, s] = np.asarray(
+                        mk.nested_dequant(hc_t[s].tolist(), float(u[s]), 8),
+                        dtype=np.float64)
         return h
 
     def _whh_contrib(self, h_code, u):
@@ -273,7 +303,10 @@ class LeveledLTCInference:
         """单 chunk 前向。xb (T, in_dim, B) float32；返回 (B, n_classes) logits。"""
         T, _, B = xb.shape
         mk = _native()
-        h_code = np.zeros((self.n, B), dtype=np.int64)
+        q_np = getattr(mk, "nested_quant_i32_np", None)   # None 视为缺失 → 回退 list 版
+        # 主存储 (B,N) 行主：逐样本行 = 连续零拷贝切片；读侧用 .T 视图（切片语义不变）
+        h_code_t = np.zeros((B, self.n), dtype=np.int64)
+        h_code = h_code_t.T
         u = np.zeros(B)
         hb = np.zeros((self.n, B))
         acc = self.accounting
@@ -292,14 +325,19 @@ class LeveledLTCInference:
             h_pre = h + self.dts[:, None] * (-h + np.tanh(z))
             h_f32 = h_pre.astype(np.float32)
             u = np.abs(h_f32).max(axis=0).astype(np.float32) * np.float32(2.0 ** -31)
+            h_f32_t = np.ascontiguousarray(h_f32.T)   # 每步一次 (B,N) 连续化；转置不改元素序
+            seed_t = self.seed_base + seed_off + t    # 同步各样本共用同一 seed（冻结语义）
             for s in range(B):
                 if u[s] > 0:
-                    h_code[:, s] = np.asarray(
-                        mk.nested_quant_i32(h_f32[:, s].tolist(), float(u[s]),
-                                            self.seed_base + seed_off + t),
-                        dtype=np.int64)
+                    if q_np is not None:
+                        h_code_t[s] = q_np(h_f32_t[s], float(u[s]), seed_t)
+                    else:
+                        h_code_t[s] = np.asarray(
+                            mk.nested_quant_i32(h_f32_t[s].tolist(), float(u[s]),
+                                                seed_t),
+                            dtype=np.int64)
                 else:
-                    h_code[:, s] = 0
+                    h_code_t[s] = 0
             hb += self._reconstruct(h_code, u)
         return (self.W_y @ (hb / T) + self.b_y[:, None]).T   # (B, n_classes)
 

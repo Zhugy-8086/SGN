@@ -1,4 +1,4 @@
-// simd_dispatch.cpp - simd 原语层运行时调度（HAL 雏形，P2）
+﻿// simd_dispatch.cpp - simd 原语层运行时调度（HAL 雏形，P2）
 //
 // 背景：SIMD 原语域拆分设计（内部） P2。
 // 结构仿 dispatch/registry.cpp：
@@ -155,35 +155,51 @@ static void cpuid_leaf(int leaf, int sub, int* r) {
     __cpuid_count(leaf, sub, r[0], r[1], r[2], r[3]);
 #endif
 }
-static CpuCaps cpu_caps_x86() {
+// caps 纯派生（无 intrinsic 依赖）：CPUID 寄存器 + XCR0 → CpuCaps。
+// 可测性接缝（2026-09-07 外部审查 A4）：Arrow Lake OSPKE leaf 误读 bug 固化
+// 为 mock 回归——test_cpuid_caps_mock.cpp 直接 include 本 TU 喂寄存器断言，
+// 不依赖真机；新增 ISA 位检测时必须同步新增 mock 用例。
+// 门未开（无 XSAVE/AVX 或 OS 未使能 XMM+YMM）时 l7_0/l7_1 可传全零（被忽略）。
+// 位定义：leaf1 ECX: SSSE3=9, AVX=28, XSAVE=27；leaf7 sub0 EBX: AVX2=5, AVX512F=16,
+//         AVX512BW=30；leaf7 sub0 ECX: AVX512VNNI=11；leaf7 sub1 EAX: AVX-VNNI=4；
+//         XCR0: XMM=1, YMM=2, opmask=4, ZMM hi=8。
+static CpuCaps caps_from_registers(const int l1[4], const int l7_0[4],
+                                   const int l7_1[4], unsigned long long xcr0) {
     CpuCaps c = {false, false, false, false, false, false};
-    int r[4];
-    cpuid_leaf(1, 0, r);
-    const bool os_xsave = (r[2] & (1 << 27)) != 0;
-    const bool cpu_avx  = (r[2] & (1 << 28)) != 0;
-    c.ssse3 = (r[2] & (1 << 9)) != 0;
-    if (os_xsave && cpu_avx && (sgn_xgetbv(0) & 0x6) == 0x6) {
+    const bool os_xsave = (l1[2] & (1 << 27)) != 0;
+    const bool cpu_avx  = (l1[2] & (1 << 28)) != 0;
+    c.ssse3 = (l1[2] & (1 << 9)) != 0;
+    if (os_xsave && cpu_avx && (xcr0 & 0x6) == 0x6) {
         // XMM+YMM 状态已由 OS 使能（AVX/AVX2 前提）
-        cpuid_leaf(7, 0, r);  // leaf7 subleaf0：一次调用读全 EBX/ECX/EDX
-        c.avx2      = (r[1] & (1 << 5)) != 0;
-        c.avx512f   = (r[1] & (1 << 16)) != 0;
-        c.avx512_bw = (r[1] & (1 << 30)) != 0;
+        c.avx2      = (l7_0[1] & (1 << 5)) != 0;
+        c.avx512f   = (l7_0[1] & (1 << 16)) != 0;
+        c.avx512_bw = (l7_0[1] & (1 << 30)) != 0;
         // AVX-512 还需 opmask + ZMM hi256 状态（XCR0 0xE6）
-        if (c.avx512f && (sgn_xgetbv(0) & 0xE6) != 0xE6) {
+        if (c.avx512f && (xcr0 & 0xE6) != 0xE6) {
             c.avx512f = c.avx512_bw = false;
         }
         // AVX512-VNNI：leaf7 sub0 ECX bit11（2026-08-31 修正后正确，sub0 是其所在 leaf）
-        c.avx512_vnni = (r[2] & (1 << 11)) != 0;
+        c.avx512_vnni = (l7_0[2] & (1 << 11)) != 0;
         // AVX-VNNI（256 位 VNNI，vpdpbusd）：leaf7 sub1 EAX bit4
         // （2026-09-02 修正，两处错误叠加：① subleaf 应为 1 非 0——sub0 ECX[4] 是
         // OSPKE；② 寄存器应为 EAX 非 ECX——Intel SDM/Rust std 检测源码双确认
         // CPUID.7.1.EAX[4]=AVX-VNNI，同寄存器 bit5=AVX512-BF16。旧代码读
         // sub0 ECX[4]=OSPKE 位：OSPKE=0 机器（Arrow Lake/Windows 实测）VNNI 永不
         // 检测到，dot8/dot4 静默落标量；EPYC/Linux 因 OSPKE=1 侥幸误判掩盖）。
-        cpuid_leaf(7, 1, r);
-        c.avx_vnni = (r[0] & (1 << 4)) != 0;
+        c.avx_vnni = (l7_1[0] & (1 << 4)) != 0;
     }
     return c;
+}
+static CpuCaps cpu_caps_x86() {
+    int l1[4] = {0, 0, 0, 0}, l7_0[4] = {0, 0, 0, 0}, l7_1[4] = {0, 0, 0, 0};
+    cpuid_leaf(1, 0, l1);
+    const unsigned long long xcr0 = sgn_xgetbv(0);
+    if ((l1[2] & (1 << 27)) != 0 && (l1[2] & (1 << 28)) != 0 &&
+        (xcr0 & 0x6) == 0x6) {
+        cpuid_leaf(7, 0, l7_0);  // leaf7 subleaf0：一次调用读全 EBX/ECX/EDX
+        cpuid_leaf(7, 1, l7_1);  // AVX-VNNI 在 sub1 EAX（见 caps_from_registers 注）
+    }
+    return caps_from_registers(l1, l7_0, l7_1, xcr0);
 }
 #endif
 

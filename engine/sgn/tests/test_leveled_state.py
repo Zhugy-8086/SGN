@@ -1,6 +1,6 @@
-# test_leveled_state.py - 层 2 接线验收测试（W5–W7，Phase 2a）
+﻿# test_leveled_state.py - 层 2 接线验收测试（W5–W7，Phase 2a）
 #
-# 预先登记验收钩子（docs/ltc_cfc_dynamic_quantization/
+# 预注册验收钩子（docs/ltc_cfc_dynamic_quantization/
 # 层2接线设计_LeveledState状态布局_2026_09_06.md §七）：
 #   W5 floor 域内定理：任意 int32 码字（含 ±顶码）floor 读法恒在符号域内；
 #     RTN 读法（view_codes）顶码 +2^(b−1) 超域复现（B4a 例外回归锚）
@@ -264,3 +264,155 @@ def test_w9_int8_weight_quantization_bound():
     w_tilde = inf.W_h_q * inf.s_row[:, None]
     err = np.abs(w_tilde - p["W_h"])
     assert (err <= 0.5 * inf.s_row[:, None] + 1e-6).all()
+
+
+# -------------------------------- NP1 numpy 零拷贝热路径（2026-09-07 遗留项收口）
+# 契约：_np 与 list 版调同一 C++ 内核 → 逐位一致；入侧 1-D C-contiguous +
+# 精确 dtype 严格校验（不符 ValueError，不静默转换——裸 caster 实证会静默宽容）。
+@pytest.mark.parametrize("k", [1, 7, 255, 4096, 2**18, 2**18 + 5])
+def test_np1_simd_bitwise_parity(k):
+    """simd 5 个 _np 函数 == list 版逐位（同内核），dtype/shape 契约钉死。"""
+    rng = np.random.default_rng(k % 89 + 2)
+    codes = rng.integers(-2**31, 2**31, size=k, dtype=np.int64)
+    w = rng.integers(-127, 128, size=k, dtype=np.int8)
+    q_u8 = ((codes >> 24) + 128).astype(np.uint8)
+    # dot8 / dot4：np 版（指针直读）== list 版逐位
+    assert _mk_simd.dot8_np(q_u8, w) == \
+        _mk_simd.dot8(q_u8.tolist(), w.tolist())
+    assert _mk_simd.dot4_np(q_u8, w) == \
+        _mk_simd.dot4(q_u8.tolist(), w.tolist())
+    # dot4_packed：打包 nibble（K = 2×len 隐式）
+    a = rng.integers(0, 16, size=2 * k, dtype=np.int64)
+    b = rng.integers(-8, 8, size=2 * k, dtype=np.int64)
+    a_p = ((a[1::2] << 4) | a[0::2]).astype(np.uint8)
+    b_p = ((b[1::2] & 0xF) << 4 | (b[0::2] & 0xF)).astype(np.uint8).view(np.int8)
+    assert _mk_simd.dot4_packed_np(a_p, b_p) == \
+        _mk_simd.dot4_packed(a_p.tolist(), b_p.tolist())
+    # unpack：值 + dtype + shape（u8[2K] / int8[2K]）
+    u4 = (rng.integers(0, 16, size=2 * k, dtype=np.int64)).astype(np.uint8)
+    packed = ((u4[1::2] << 4) | u4[0::2]).astype(np.uint8)
+    up_np = _mk_simd.unpack_nibble_u_np(packed)
+    up_ls = _mk_simd.unpack_nibble_u(packed.tolist())
+    assert up_np.dtype == np.uint8 and up_np.shape == (2 * k,)
+    assert (up_np == np.asarray(up_ls)).all()
+    twos = (rng.integers(-8, 8, size=2 * k, dtype=np.int64) & 0xF).astype(np.uint8)
+    packed_t = ((twos[1::2] << 4) | twos[0::2]).astype(np.uint8)
+    sp_np = _mk_simd.unpack_nibble_s_np(packed_t)
+    sp_ls = _mk_simd.unpack_nibble_s(packed_t.tolist())
+    assert sp_np.dtype == np.int8 and sp_np.shape == (2 * k,)
+    assert (sp_np == np.asarray(sp_ls)).all()
+
+
+def test_np1_nested_bitwise_parity():
+    """nested _np == list 版逐位：quant 同 seed 多 u 码字逐位；dequant float32
+    用 view(uint32) 位模式比较（list 版 Python float = f32 精确拓宽）。"""
+    rng = np.random.default_rng(71)
+    n = 257
+    for u in (1e-8, 2.0 ** -31, 0.003):
+        h = rng.normal(0, 0.5, size=n).astype(np.float32)
+        h[0] = 0.0                                        # 吸收态
+        seed = 4242
+        q_np = _mk_nested.nested_quant_i32_np(h, u, seed)
+        q_ls = np.asarray(
+            _mk_nested.nested_quant_i32(h.tolist(), u, seed), dtype=np.int64)
+        assert q_np.dtype == np.int64 and (q_np == q_ls).all()
+        d_np = _mk_nested.nested_dequant_np(q_np, u, 8)
+        d_ls = _mk_nested.nested_dequant(q_ls.tolist(), u, 8)
+        assert d_np.dtype == np.float32
+        assert (d_np.view(np.uint32) ==
+                np.asarray(d_ls, dtype=np.float32).view(np.uint32)).all()
+
+
+def test_np1_strict_contract_rejection():
+    """零拷贝严格契约：错 dtype / 非连续切片 / 2-D / Python list 一律 ValueError
+    （裸 caster 会静默转换/拷贝——本测试把显式报错钉死为回归锚）。"""
+    ok_u8 = np.zeros(8, dtype=np.uint8)
+    ok_i8 = np.zeros(8, dtype=np.int8)
+    ok_f32 = np.zeros(8, dtype=np.float32)
+    with pytest.raises(ValueError):
+        _mk_simd.dot8_np(ok_u8.astype(np.int32), ok_i8)          # 错 dtype
+    with pytest.raises(ValueError):
+        _mk_simd.dot8_np(ok_u8, ok_i8.astype(np.int64))          # 错 dtype（b 侧）
+    with pytest.raises(ValueError):
+        col = np.zeros((8, 8), dtype=np.uint8)[:, 0]             # 非连续列切片
+        _mk_simd.dot8_np(col, ok_i8)
+    with pytest.raises(ValueError):
+        _mk_simd.dot8_np(ok_u8.reshape(2, 4), ok_i8.reshape(2, 4))  # 2-D
+    with pytest.raises(ValueError):
+        _mk_simd.dot8_np(ok_u8.tolist(), ok_i8.tolist())         # Python list
+    with pytest.raises(ValueError):
+        _mk_nested.nested_quant_i32_np(ok_f32.astype(np.float64), 1e-8, 1)  # 错 dtype
+    with pytest.raises(ValueError):
+        _mk_nested.nested_quant_i32_np(ok_f32.reshape(2, 4), 1e-8, 1)       # 2-D
+    with pytest.raises(ValueError):
+        _mk_nested.nested_quant_i32_np(ok_f32.tolist(), 1e-8, 1)  # Python list
+    codes = np.zeros(8, dtype=np.int64)
+    with pytest.raises(ValueError):
+        _mk_nested.nested_dequant_np(codes, 1e-8, 3)             # level 校验保留
+    with pytest.raises(ValueError):
+        _mk_nested.nested_dequant_np(codes.reshape(2, 4), 1e-8, 8)          # 2-D
+
+
+def test_np1_forward_chunk_np_vs_list_path_bitwise():
+    """端到端双路径对拍：屏蔽 _np（monkeypatch 置 None 强制 list 回退）后
+    forward_chunk logits 逐位相等，accounting 亦相等——数值语义不变的 pin。"""
+    from engine.sgn.leveled_state import LeveledLTCInference
+    rng = np.random.default_rng(73)
+    p = _tiny_params(rng)
+    x = rng.normal(0, 1, size=(6, 4, 20)).astype(np.float32)
+    is_q8 = rng.random(8) < 0.5                                  # 混合组（Q4 肢也走热路径）
+    inf_np = LeveledLTCInference(p["W_h"], p["W_x"], p["b"], p["W_y"], p["b_y"],
+                                 p["dts"], is_q8=is_q8, weight_mode="int8-w")
+    lg_np = inf_np.forward_chunk(x)
+    acc_np = dict(inf_np.accounting)
+    monkey_targets = [
+        (_mk_nested, "nested_quant_i32_np"),
+        (_mk_nested, "nested_dequant_np"),
+        (_mk_simd, "dot8_np"),
+        (_mk_simd, "unpack_nibble_u_np"),
+    ]
+    for mod, name in monkey_targets:
+        assert getattr(mod, name, None) is not None              # _np 在位才有屏蔽意义
+    import contextlib
+    @contextlib.contextmanager
+    def _np_disabled():
+        saved = [(mod, name, getattr(mod, name, None)) for mod, name in monkey_targets]
+        try:
+            for mod, name in monkey_targets:
+                setattr(mod, name, None)                         # None = 缺失 → 回退
+            yield
+        finally:
+            for mod, name, val in saved:
+                if val is not None:
+                    setattr(mod, name, val)
+    with _np_disabled():
+        inf_ls = LeveledLTCInference(p["W_h"], p["W_x"], p["b"], p["W_y"], p["b_y"],
+                                     p["dts"], is_q8=is_q8, weight_mode="int8-w")
+        lg_ls = inf_ls.forward_chunk(x)
+        acc_ls = dict(inf_ls.accounting)
+    assert (lg_np == lg_ls).all()                                # logits 逐位
+    assert acc_np == acc_ls                                      # W9 埋点不受影响
+
+
+def test_np1_dot_state_weight_path_parity():
+    """dot_state_weight native _np 路径 == 屏蔽 _np 后的 list 回退路径
+    （(B, n_out) int64 逐位；混合组覆盖 Q8+Q4 双肢）。"""
+    rng = np.random.default_rng(79)
+    n, b = 64, 3
+    h = rng.normal(0, 0.5, size=(n, b)).astype(np.float32)
+    ls = LeveledStateBatch(h, seeds=99)
+    groups = {"q8": _random_groups(rng, n)["q8"], "q4": None}
+    groups["q4"] = ~groups["q8"]
+    w = {"q8": rng.integers(-127, 128, size=(10, n)).astype(np.int8),
+         "q4": rng.integers(-127, 128, size=(10, n)).astype(np.int8)}
+    got_np = ls.dot_state_weight(w, groups, native=_mk_simd)
+    saved = getattr(_mk_simd, "dot8_np", None)
+    saved_u = getattr(_mk_simd, "unpack_nibble_u_np", None)
+    try:
+        _mk_simd.dot8_np = None
+        _mk_simd.unpack_nibble_u_np = None
+        got_ls = ls.dot_state_weight(w, groups, native=_mk_simd)
+    finally:
+        _mk_simd.dot8_np = saved
+        _mk_simd.unpack_nibble_u_np = saved_u
+    assert (got_np == got_ls).all()
