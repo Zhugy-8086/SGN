@@ -198,8 +198,97 @@ std::vector<int64_t> PackedBackend::get_all_simd_16bit_unsigned_() const {
 std::string PackedBackend::serialize() const {
     std::ostringstream oss;
     oss << "{\"backend\":\"packed\",\"packed_value\":"
-        << packed_ << ",\"total_bits\":" << total_bits_ << "}";
+        << packed_ << ",\"total_bits\":" << total_bits_ << ",\"slots\":[";
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{\"bits\":" << slots_[i].bits
+            << ",\"is_signed\":" << (slots_[i].is_signed ? "true" : "false")
+            << ",\"offset\":" << slots_[i].offset << "}";
+    }
+    oss << "]}";
     return oss.str();
+}
+
+// ============================================================
+// 反序列化（A1-3 修复 2026-09-08：独立恢复完整状态）
+// 解析 serialize() 的固定输出格式；字段顺序敏感（与 serialize 逐字对应），
+// 不做通用 JSON 解析（项目无 JSON 库依赖，保持零依赖纪律）。
+// ============================================================
+
+PackedBackend PackedBackend::deserialize(const std::string& json) {
+    auto find_after = [&json](const std::string& key) -> size_t {
+        size_t p = json.find("\"" + key + "\":");
+        if (p == std::string::npos) {
+            throw std::invalid_argument("serialize JSON 缺少字段: " + key);
+        }
+        // 搜索串 "\"key\":" 总长 = key.size() + 3（开引号 + 闭引号 + 冒号）
+        return p + key.size() + 3;
+    };
+    auto read_int = [&json](size_t from) -> std::pair<int64_t, size_t> {
+        size_t p = from;
+        bool neg = false;
+        if (p < json.size() && (json[p] == '-' || json[p] == '+')) {
+            neg = (json[p] == '-');
+            ++p;
+        }
+        int64_t v = 0;
+        size_t digits = 0;
+        while (p < json.size() && json[p] >= '0' && json[p] <= '9') {
+            v = v * 10 + (json[p] - '0');
+            ++p; ++digits;
+        }
+        if (digits == 0) throw std::invalid_argument("serialize JSON 整数字段解析失败");
+        return {neg ? -v : v, p};
+    };
+
+    if (json.find("\"backend\":\"packed\"") == std::string::npos) {
+        throw std::invalid_argument("backend 类型不是 packed");
+    }
+
+    // packed_value（可能超出 int64 正域——uint64 顶码；按无符号读）
+    size_t pv_pos = find_after("packed_value");
+    while (pv_pos < json.size() && json[pv_pos] == ' ') ++pv_pos;
+    bool pv_neg = false;
+    if (pv_pos < json.size() && json[pv_pos] == '-') { pv_neg = true; ++pv_pos; }
+    uint64_t packed = 0;
+    while (pv_pos < json.size() && json[pv_pos] >= '0' && json[pv_pos] <= '9') {
+        packed = packed * 10 + static_cast<uint64_t>(json[pv_pos] - '0');
+        ++pv_pos;
+    }
+    (void)pv_neg;  // serialize 不产生负 packed_value（uint64 输出）
+
+    size_t tb_pos = find_after("total_bits");
+    int total_bits = static_cast<int>(read_int(tb_pos).first);
+
+    // slots 数组
+    size_t arr = find_after("slots");
+    size_t lb = json.find('[', arr);
+    size_t rb = json.find(']', lb);
+    if (lb == std::string::npos || rb == std::string::npos) {
+        throw std::invalid_argument("serialize JSON slots 数组解析失败");
+    }
+    std::vector<SlotSpec> slots;
+    size_t p = lb + 1;
+    while (p < rb) {
+        if (json[p] == ',' || json[p] == ' ') { ++p; continue; }
+        size_t b_pos  = json.find("\"bits\":", p);
+        size_t s_pos  = json.find("\"is_signed\":", p);
+        size_t o_pos  = json.find("\"offset\":", p);
+        if (b_pos == std::string::npos || s_pos == std::string::npos ||
+            o_pos == std::string::npos || b_pos >= rb) {
+            throw std::invalid_argument("serialize JSON 槽位字段解析失败");
+        }
+        int bits      = static_cast<int>(read_int(b_pos + 7).first);
+        bool is_signed = (json.compare(s_pos + 12, 4, "true") == 0);
+        int offset    = static_cast<int>(read_int(o_pos + 9).first);
+        slots.emplace_back(bits, is_signed, offset);
+        size_t next = json.find('{', p + 1);
+        if (next == std::string::npos || next >= rb) break;
+        p = next;
+    }
+    if (slots.empty()) throw std::invalid_argument("serialize JSON slots 为空");
+
+    return PackedBackend(slots, packed);
 }
 
 // ============================================================
@@ -208,7 +297,8 @@ std::string PackedBackend::serialize() const {
 
 std::vector<int64_t> PackedBackend::batch_get_all(
     const std::vector<int>& bits_list,
-    const std::vector<uint64_t>& packed_values
+    const std::vector<uint64_t>& packed_values,
+    const std::vector<bool>& signed_flags
 ) {
     if (bits_list.empty() || packed_values.empty()) {
         return {};
@@ -234,11 +324,23 @@ std::vector<int64_t> PackedBackend::batch_get_all(
         masks[i] = (bits_list[i] >= 64) ? ~0ULL : ((1ULL << bits_list[i]) - 1);
     }
 
+    // 槽位符号标志（A1-1：空 = 全无符号，与 from_bits 约定一致）
+    bool any_signed = false;
+    std::vector<bool> slot_signed(n_slots, false);
+    if (!signed_flags.empty()) {
+        for (int i = 0; i < n_slots; ++i) {
+            slot_signed[i] = (i < static_cast<int>(signed_flags.size()))
+                             ? signed_flags[i] : false;
+            any_signed = any_signed || slot_signed[i];
+        }
+    }
+
     int n_values = static_cast<int>(packed_values.size());
     std::vector<int64_t> result(static_cast<size_t>(n_values) * n_slots);
 
-    // 检查是否可用 8-bit 等宽快速路径
-    bool use_8bit_fast = (n_slots >= 4 && n_slots <= 8);
+    // 检查是否可用 8-bit 等宽快速路径（快路径输出为无符号字节值，
+    // 任何 signed 槽位存在时必须回退标量做符号扩展）
+    bool use_8bit_fast = (n_slots >= 4 && n_slots <= 8) && !any_signed;
     if (use_8bit_fast) {
         for (int b : bits_list) {
             if (b != 8) { use_8bit_fast = false; break; }
@@ -250,12 +352,23 @@ std::vector<int64_t> PackedBackend::batch_get_all(
     if (use_8bit_fast) {
         simd::batch_reverse_u8(packed_values.data(), n_values, n_slots, result.data());
     } else {
-        // 通用标量路径（回退，兼容 GPU/ARM 等非 x86 平台）
+        // 通用标量路径（回退，兼容 GPU/ARM 等非 x86 平台）+ 逐槽符号扩展
+        // （符号处理与 get() 一致：补码；bits=64 时位型即 int64 值，M1 修复口径）
         for (int i = 0; i < n_values; ++i) {
             uint64_t pv = packed_values[i];
             for (int j = 0; j < n_slots; ++j) {
-                result[static_cast<size_t>(i) * n_slots + j] =
-                    static_cast<int64_t>((pv >> offsets[j]) & masks[j]);
+                uint64_t raw = (pv >> offsets[j]) & masks[j];
+                int64_t v = static_cast<int64_t>(raw);
+                if (slot_signed[j]) {
+                    int b = bits_list[j];
+                    if (b == 64) {
+                        v = static_cast<int64_t>(raw);
+                    } else if (raw & (1ULL << (b - 1))) {
+                        v = static_cast<int64_t>(raw)
+                            - static_cast<int64_t>(1ULL << b);
+                    }
+                }
+                result[static_cast<size_t>(i) * n_slots + j] = v;
             }
         }
     }

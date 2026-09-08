@@ -452,6 +452,132 @@ def test_batch_get_all_fallback():
     print(f"[PASS] test_batch_get_all_fallback: Python batch 正确")
 
 
+# ============================================================
+# A1-1/A1-3（2026-09-08）：批量 API signed_flags + serialize 槽位定义
+# ============================================================
+
+def test_batch_get_all_signed_flags():
+    """A1-1: batch_get_all 逐槽 signed_flags（C++ 与 fallback 口径一致）"""
+    from engine.sgn.msint.cpp_backend import batch_get_all
+    import numpy as np
+
+    bits_list = [8, 8, 8, 8]
+    # 0x80=128(无符号)/-128(signed)、0xFF=255/-1、0x7F=127
+    packed = np.array([0x80FF7F80, 0xFF7F80FF], dtype=np.uint64)
+    flags = [True, True, False, False]   # 前两槽 signed
+
+    got = batch_get_all(bits_list, packed, signed_flags=flags)
+    # 逐元素参照：槽序 = 高位在前（slot0=byte3, slot3=byte0）
+    expect = np.empty((2, 4), dtype=np.int64)
+    for i, p in enumerate([0x80FF7F80, 0xFF7F80FF]):
+        for j, byte in enumerate([(int(p) >> 24) & 0xFF, (int(p) >> 16) & 0xFF,
+                                  (int(p) >> 8) & 0xFF, int(p) & 0xFF]):
+            v = byte
+            if flags[j] and byte & 0x80:
+                v = byte - 0x100
+            expect[i, j] = v
+    assert got.shape == (2, 4)
+    assert (got == expect).all(), f"got={got} expect={expect}"
+
+    # None（默认）= 全无符号，与旧行为逐位一致
+    got_u = batch_get_all(bits_list, packed)
+    expect_u = np.empty((2, 4), dtype=np.int64)
+    for i, p in enumerate([0x80FF7F80, 0xFF7F80FF]):
+        for j, byte in enumerate([(int(p) >> 24) & 0xFF, (int(p) >> 16) & 0xFF,
+                                  (int(p) >> 8) & 0xFF, int(p) & 0xFF]):
+            expect_u[i, j] = byte
+    assert (got_u == expect_u).all(), "默认全无符号行为应与旧行为逐位一致"
+
+    # 非等宽（12+12+16）signed 混合，回退标量路径；packed 构造保证 slot0/slot1 为负
+    bits2 = [12, 12, 16]
+    packed2 = int(0x8FFF7F80FF)          # slot0=0x8FF(负) slot1=0xF7F(负) slot2=0x80FF(无符号)
+    packed2_arr = np.array([packed2], dtype=np.uint64)
+    flags2 = [True, True, False]
+    got2 = batch_get_all(bits2, packed2_arr, signed_flags=flags2)
+    total2 = sum(bits2)
+    off2 = total2
+    for j, b in enumerate(bits2):
+        off2 -= b
+        raw = (packed2 >> off2) & ((1 << b) - 1)
+        if flags2[j]:
+            v = raw - (1 << b) if raw & (1 << (b - 1)) else raw
+        else:
+            v = raw
+        assert got2[0, j] == v, f"slot{j}: got={got2[0, j]} expect={v}"
+    assert got2[0, 0] < 0 and got2[0, 1] < 0, "构造的负槽位应为负值"
+    assert got2[0, 2] == (packed2 & 0xFFFF), "无符号槽位应取原值"
+
+    # None（默认）在非等宽下同样无符号
+    got2_u = batch_get_all(bits2, packed2_arr)
+    assert got2_u[0, 0] == ((packed2 >> 28) & 0xFFF), "None 口径应为无符号"
+
+    print(f"[PASS] test_batch_get_all_signed_flags: 逐槽 signed/None 两种口径")
+
+
+def test_batch_decode_signed_explicit():
+    """A1-1: batch_decode_to_float/_into 的 signed 显式参数（默认 True=原行为）"""
+    from engine.sgn.msint.cpp_backend import (
+        batch_decode_to_float, batch_decode_to_float_into)
+    import numpy as np
+
+    # backward_int16 schema：8+8 concat → i16
+    bits_list = [8, 8]
+    packed = np.array([0xFF7F], dtype=np.uint64)  # concat = 0xFF7F = 65407 u / -129 i16
+
+    got_s = batch_decode_to_float(bits_list, packed, 1.0)          # 默认 True
+    assert got_s[0] == np.float32(-129.0), f"默认 signed: {got_s[0]}"
+
+    got_u = batch_decode_to_float(bits_list, packed, 1.0, signed=False)
+    assert got_u[0] == np.float32(65407.0), f"unsigned: {got_u[0]}"
+
+    # _into 变体同口径
+    out = np.zeros(1, dtype=np.float32)
+    batch_decode_to_float_into(bits_list, packed, 1.0, out, True)
+    assert out[0] == np.float32(-129.0)
+    batch_decode_to_float_into(bits_list, packed, 1.0, out, False)
+    assert out[0] == np.float32(65407.0)
+
+    print(f"[PASS] test_batch_decode_signed_explicit: 默认/False 双口径 + _into")
+
+
+def test_serialize_deserialize_roundtrip():
+    """A1-3: serialize 含 slots；deserialize 独立恢复完整状态（含负 packed 往返）"""
+    import sys as _sys
+    import os as _os
+    sys.path.insert(0, str(_PROJ_ROOT / "engine"))
+    import sgn as _sgn_mod
+
+    be = _sgn_mod.PackedBackend.from_bits([12, 8, 16], [True, False, True],
+                                          packed=0xFFF7F80FF)
+    js = be.serialize()
+    assert '"slots"' in js, f"serialize 应含 slots: {js}"
+    assert '"is_signed":true' in js, f"serialize 应含 is_signed: {js}"
+
+    be2 = _sgn_mod.PackedBackend.deserialize(js)
+    assert be2.packed_value == be.packed_value, (
+        f"packed 往返: {be2.packed_value:#x} vs {be.packed_value:#x}")
+    assert be2.total_bits == be.total_bits
+    assert be2.slot_count == 3
+    # 槽位属性逐位一致
+    s1 = be.slots()
+    s2 = be2.slots()
+    for a, b in zip(s1, s2):
+        assert a.bits == b.bits and a.is_signed == b.is_signed and a.offset == b.offset, \
+            f"槽位不一致: {a} vs {b}"
+    # get() 逐槽一致（含 signed 扩展）
+    for i in range(3):
+        assert be.get(i) == be2.get(i), f"get({i}) 不一致"
+
+    # 负值 packed（高位全 1）往返
+    be3 = _sgn_mod.PackedBackend.from_bits([8, 8], [True, True],
+                                           packed=0xFFFFFFFFFFFF80FF)
+    be4 = _sgn_mod.PackedBackend.deserialize(be3.serialize())
+    assert be4.packed_value == be3.packed_value
+    assert be4.get(0) == be3.get(0) and be4.get(1) == be3.get(1)
+
+    print(f"[PASS] test_serialize_deserialize_roundtrip: slots 进 JSON + 独立重建")
+
+
 if __name__ == "__main__":
     print("=" * 78)
     print("Stage 3.0.5 Task 5.4/5.5 对照测试 — C++ vs Python")
@@ -485,6 +611,13 @@ if __name__ == "__main__":
     test_batch_get_all_mixed_bits()
     test_batch_get_all_performance()
     test_batch_get_all_fallback()
+
+    # A1-1/A1-3（2026-09-08）：批量 API signed_flags + serialize 槽位定义
+    print()
+    print("--- A1-1/A1-3: 批量 signed_flags + serialize 槽位 ---")
+    test_batch_get_all_signed_flags()
+    test_batch_decode_signed_explicit()
+    test_serialize_deserialize_roundtrip()
 
     print()
     print("=" * 78)

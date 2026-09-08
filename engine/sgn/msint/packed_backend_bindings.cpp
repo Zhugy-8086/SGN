@@ -27,7 +27,8 @@ static void decode_to_float_core(
     const uint64_t* pv_ptr,
     int n_values,
     float scale,
-    float* res_ptr
+    float* res_ptr,
+    bool signed_concat = true   // A1-1：concat 视角符号语义（默认 true = 现行为）
 ) {
     int total = 0;
     for (int b : bits_list) {
@@ -39,15 +40,21 @@ static void decode_to_float_core(
     // 快速路径：backward_int16 schema (8+8 bits, total=16)
     // 解码内核已迁出到 simd::decode_i16_f32（含 SSSE3 PSHUFB+PALIGNR+PMOVSXWD 热路径、
     // AVX2 原始路径回退、标量锚点，见 simd 原语层）；此处仅保留 schema 判定。
-    if (total == 16 && bits_list.size() == 2 &&
+    // signed_concat=false 时不可用（decode_i16_f32 为 i16 补码语义）→ 回退通用路径。
+    if (signed_concat && total == 16 && bits_list.size() == 2 &&
         bits_list[0] == 8 && bits_list[1] == 8) {
         sgn::simd::decode_i16_f32(pv_ptr, n_values, scale, res_ptr);
     }
     // 快速路径：8-bit 单槽位
     else if (bits_list.size() == 1 && bits_list[0] == 8) {
         for (int i = 0; i < n_values; ++i) {
-            int8_t val8 = static_cast<int8_t>(pv_ptr[i] & 0xFF);
-            res_ptr[i] = static_cast<float>(val8) * scale;
+            if (signed_concat) {
+                int8_t val8 = static_cast<int8_t>(pv_ptr[i] & 0xFF);
+                res_ptr[i] = static_cast<float>(val8) * scale;
+            } else {
+                uint8_t val8 = static_cast<uint8_t>(pv_ptr[i] & 0xFF);
+                res_ptr[i] = static_cast<float>(val8) * scale;
+            }
         }
     }
     // 通用路径：多槽位 concat
@@ -91,8 +98,8 @@ static void decode_to_float_core(
                 uint64_t slot_val = (pv >> offsets[j]) & masks[j];
                 concat_val = (concat_val << bits_list[j]) | slot_val;
             }
-            // 符号扩展
-            if (total < 64) {
+            // 符号扩展（A1-1：signed_concat=false 时跳过——无符号 concat 视角）
+            if (signed_concat && total < 64) {
                 uint64_t sign_bit = 1ULL << (total - 1);
                 if (concat_val & sign_bit) {
                     concat_val |= ~((1ULL << total) - 1);
@@ -142,8 +149,13 @@ void register_packed_backend(py::module_& m) {
                                "槽位数量")
         .def_property_readonly("total_bits", &sgn::PackedBackend::total_bits,
                                "总位数")
+        .def("slots", &sgn::PackedBackend::slots,
+             "槽位规格列表（bits/is_signed/offset）——A1-3：序列化后可独立检查")
         .def("serialize", &sgn::PackedBackend::serialize,
-             "序列化为 JSON 字符串")
+             "序列化为 JSON 字符串（含 slots 数组——A1-3 修复后可独立恢复完整状态）")
+        .def_static("deserialize", &sgn::PackedBackend::deserialize,
+                    py::arg("json"),
+                    "从 serialize() 输出重建（含槽位定义，独立恢复完整状态——A1-3）")
         .def("__repr__", [](const sgn::PackedBackend& b) {
             return "<PackedBackend slots=" + std::to_string(b.slot_count()) +
                    " total_bits=" + std::to_string(b.total_bits()) +
@@ -157,9 +169,23 @@ void register_packed_backend(py::module_& m) {
     // ---- batch_get_all：numpy 零拷贝批量读取 ----
     // 接受 numpy uint64 数组，返回 2D int64 数组 [n_values, n_slots]
     // 一次 C++ 调用处理整个数组，消除逐元素 pybind11 开销
+    // A1-1：signed_flags（None=全无符号，与 from_bits 约定一致；逐槽补码符号扩展）
     m.def("batch_get_all",
         [](const std::vector<int>& bits_list,
-           py::array_t<uint64_t, py::array::c_style> packed_array) {
+           py::array_t<uint64_t, py::array::c_style> packed_array,
+           py::object signed_flags_obj) {
+            std::vector<bool> slot_signed;
+            bool any_signed = false;
+            if (!signed_flags_obj.is_none()) {
+                auto flags = signed_flags_obj.cast<std::vector<bool>>();
+                slot_signed.resize(bits_list.size(), false);
+                for (size_t i = 0; i < flags.size() && i < slot_signed.size(); ++i) {
+                    slot_signed[i] = flags[i];
+                    any_signed = any_signed || flags[i];
+                }
+            } else {
+                slot_signed.resize(bits_list.size(), false);
+            }
             if (packed_array.ndim() != 1) {
                 throw std::invalid_argument("packed_array 必须是 1D 数组");
             }
@@ -188,8 +214,9 @@ void register_packed_backend(py::module_& m) {
                 masks[i] = (bits_list[i] >= 64) ? ~0ULL : ((1ULL << bits_list[i]) - 1);
             }
 
-            // 检查 8-bit 等宽快速路径
-            bool use_8bit_fast = (n_slots >= 1 && n_slots <= 8);
+            // 检查 8-bit 等宽快速路径（输出为无符号字节值——
+            // 任何 signed 槽位存在时回退标量做符号扩展）
+            bool use_8bit_fast = (n_slots >= 1 && n_slots <= 8) && !any_signed;
             if (use_8bit_fast) {
                 for (int b : bits_list) {
                     if (b != 8) { use_8bit_fast = false; break; }
@@ -210,12 +237,23 @@ void register_packed_backend(py::module_& m) {
                     }
                 }
             } else {
-                // 通用标量路径
+                // 通用标量路径 + 逐槽符号扩展（与 PackedBackend::get 口径一致：
+                // 补码；bits=64 时位型即 int64 值，M1 修复口径）
                 for (int i = 0; i < n_values; ++i) {
                     uint64_t pv = pv_ptr[i];
                     for (int j = 0; j < n_slots; ++j) {
-                        res_ptr[i * n_slots + j] =
-                            static_cast<int64_t>((pv >> offsets[j]) & masks[j]);
+                        uint64_t raw = (pv >> offsets[j]) & masks[j];
+                        int64_t v = static_cast<int64_t>(raw);
+                        if (slot_signed[j]) {
+                            int b = bits_list[j];
+                            if (b == 64) {
+                                v = static_cast<int64_t>(raw);
+                            } else if (raw & (1ULL << (b - 1))) {
+                                v = static_cast<int64_t>(raw)
+                                    - static_cast<int64_t>(1ULL << b);
+                            }
+                        }
+                        res_ptr[i * n_slots + j] = v;
                     }
                 }
             }
@@ -224,16 +262,20 @@ void register_packed_backend(py::module_& m) {
         },
         py::arg("bits_list"),
         py::arg("packed_array"),
-        "批量读取多个 packed 值的所有槽位，返回 2D numpy 数组 [n_values, n_slots]"
+        py::arg("signed_flags") = py::none(),
+        "批量读取多个 packed 值的所有槽位，返回 2D numpy 数组 [n_values, n_slots]；"
+        "signed_flags 为逐槽符号标志列表（None=全无符号）——A1-1"
     );
 
     // ---- batch_decode_to_float：完整解码流水线（C++ 单次调用）----
     // 接受 numpy uint64 数组 + scale，返回 float32 numpy 数组
     // 一次性完成：槽位提取 → concat → signed 转换 → float32 × scale
+    // A1-1：signed 参数显式化（默认 True = 原行为；False = 无符号 concat 视角）
     m.def("batch_decode_to_float",
         [](const std::vector<int>& bits_list,
            py::array_t<uint64_t, py::array::c_style> packed_array,
-           float scale) {
+           float scale,
+           bool signed_concat) {
             if (packed_array.ndim() != 1) {
                 throw std::invalid_argument("packed_array 必须是 1D 数组");
             }
@@ -246,13 +288,16 @@ void register_packed_backend(py::module_& m) {
             auto result = py::array_t<float>(n_values);
             float* res_ptr = result.mutable_data(0);
 
-            decode_to_float_core(bits_list, pv_ptr, n_values, scale, res_ptr);
+            decode_to_float_core(bits_list, pv_ptr, n_values, scale, res_ptr,
+                                 signed_concat);
             return result;
         },
         py::arg("bits_list"),
         py::arg("packed_array"),
         py::arg("scale"),
-        "完整解码流水线：packed → concat → signed → float32 × scale，返回 1D float32 数组"
+        py::arg("signed") = true,
+        "完整解码流水线：packed → concat → signed → float32 × scale，返回 1D float32 数组；"
+        "signed=True（默认）为补码 concat 视角（原行为），False 为无符号视角——A1-1"
     );
 
     // ---- batch_decode_to_float_into：in-place 变体（预分配输出数组）----
@@ -261,7 +306,8 @@ void register_packed_backend(py::module_& m) {
         [](const std::vector<int>& bits_list,
            py::array_t<uint64_t, py::array::c_style> packed_array,
            float scale,
-           py::array_t<float, py::array::c_style> output) {
+           py::array_t<float, py::array::c_style> output,
+           bool signed_concat) {
             if (packed_array.ndim() != 1) {
                 throw std::invalid_argument("packed_array 必须是 1D 数组");
             }
@@ -279,12 +325,15 @@ void register_packed_backend(py::module_& m) {
             const uint64_t* pv_ptr = packed_array.data(0);
             float* res_ptr = output.mutable_data(0);
 
-            decode_to_float_core(bits_list, pv_ptr, n_values, scale, res_ptr);
+            decode_to_float_core(bits_list, pv_ptr, n_values, scale, res_ptr,
+                                 signed_concat);
         },
         py::arg("bits_list"),
         py::arg("packed_array"),
         py::arg("scale"),
         py::arg("output"),
-        "in-place 解码：写入预分配的 output 数组，消除分配开销"
+        py::arg("signed") = true,
+        "in-place 解码：写入预分配的 output 数组，消除分配开销；"
+        "signed=True（默认）为补码 concat 视角（原行为），False 为无符号视角——A1-1"
     );
 }

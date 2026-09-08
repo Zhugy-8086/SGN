@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 project(sgn_extension LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -24,9 +24,8 @@ endif()
 # ============================================================
 # 默认指向本机 Clang 22.1.8 安装目录；换机器时用 -DLLVM_ROOT=/path/to/llvm 覆盖。
 if(NOT LLVM_ROOT)
-    message(FATAL_ERROR
-        "LLVM_ROOT 未设置：请指定 LLVM/Clang 22.1.8 安装根目录（含 lib/ 与 bin/，需 libomp），
-        例如 -DLLVM_ROOT=<LLVM 安装目录>")
+    set(LLVM_ROOT "c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc"
+        CACHE PATH "LLVM/Clang 安装根目录（含 lib/ 和 bin/）")
 endif()
 set(LIBOMP_LIB "${LLVM_ROOT}/lib/libomp.lib")
 set(LIBOMP_DLL "${LLVM_ROOT}/bin/libomp.dll")
@@ -40,7 +39,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # AVX2 / AVX-VNNI 支持（阶段 4 收尾：全局宏已移除，ISA 能力全部下沉到 per-file /
-# target 属性，见 内部档案）。
+# target 属性，见 fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md）。
 # 各文件 ISA 归属：simd/x86/*.（阶段 1）、hc/（阶段 3）、ops/ops_nn（阶段 4 target 化）、
 # placeholder.cpp（测试钩子 VNNI）。
 add_compile_options(-O3)
@@ -64,7 +63,36 @@ if(ENABLE_MSAN)
     add_link_options(-fsanitize=memory)
 endif()
 
-find_package(pybind11 CONFIG REQUIRED)
+# pybind11 探测（E3/G1-1b 修复 2026-09-08）：pip 包自动探测 + 环境变量 HINTS。
+# 背景（P5）：主构建此前靠旧 CMakeCache 残留掩盖，新 clone 必失败。
+# 做法 = pybind11 官方推荐：`python -m pybind11 --cmakedir` 取 CONFIG 包路径。
+find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+set(PYBIND11_FINDPYTHON ON)   # pybind11NewTools 的 python3_add_library 依赖 FindPython
+set(_pybind11_hints "")
+if(Python3_EXECUTABLE)
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} -m pybind11 --cmakedir
+        OUTPUT_VARIABLE _pybind11_cmakedir
+        RESULT_VARIABLE _pybind11_probe
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(_pybind11_probe EQUAL 0 AND _pybind11_cmakedir)
+        list(APPEND _pybind11_hints "${_pybind11_cmakedir}")
+        message(STATUS "pybind11 cmake dir (python -m pybind11): ${_pybind11_cmakedir}")
+    endif()
+endif()
+list(APPEND _pybind11_hints "$ENV{PYBIND11_DIR}")
+
+find_package(pybind11 CONFIG QUIET HINTS ${_pybind11_hints})
+if(NOT pybind11_FOUND)
+    message(FATAL_ERROR
+        "未找到 pybind11（CONFIG 包）。\n"
+        "  解决方式（任选其一）：\n"
+        "    1. pip install pybind11 后重配（推荐——自动探测走此路径）\n"
+        "    2. -Dpybind11_DIR=<site-packages>/pybind11/share/cmake/pybind11\n"
+        "    3. 设环境变量 PYBIND11_DIR 指向 pybind11 安装根\n"
+        "  参考：COMPILER_TOOLCHAIN.md（工具链自举）")
+endif()
 
 # OpenMP 支持（col2im 原 C 代码使用 #pragma omp parallel for 并行化）
 # Clang/Windows 只能使用 libomp（-fopenmp 仍生成 __kmpc_* 符号，VCOMP140 不兼容）
@@ -75,7 +103,7 @@ add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 # 阶段 4（2026-08-31）：压制 LTO。
 # LTO 与 ops/ops_nn 的 __attribute__((target("avx2,fma"))) 函数（内含 #pragma omp
 # outlined 函数）在 lld 22.1.8 后端冲突，链接崩溃（'LLVM ERROR: Do not know how to
-# split the result of this operator!'，见 内部档案 §9）。
+# split the result of this operator!'，见 fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md §9）。
 # 根因：pybind11_add_module 在 CMAKE_INTERPROCEDURAL_OPTIMIZATION 未定义时自动链接
 # pybind11::lto（其 INTERFACE -flto 经 target 级注入，落在全局 -fno-lto 之后，
 # last-wins 反转为开）。故先定义该变量为 OFF（pybind11 跳过 LTO），再全局 -fno-lto 兜底。
@@ -126,33 +154,33 @@ pybind11_add_module(sgn
     # int8 对（h,l）梯度载体（U 方案，C++ 内部闭环；见 pair_grad_carrier.h 头注；
     # 2026-09-02：Phase 1 无 Python 绑定，Phase 2 由 autograd 叶梯度存储挂钩调用）
     msint/pair_grad_carrier.cpp
-    # SIMD 原语库（平台无关原语层；Step 0 骨架，见 内部档案）
+    # SIMD 原语库（平台无关原语层；Step 0 骨架，见 fixes_相关修复/simd指令集加速文件拆分计划_2026_08_29.md）
     mkern/simd/scalar.cpp
     mkern/simd/simd_dispatch.cpp
     # SIMD 原语 Python 绑定（sgn.mkern_simd 子模块，层 2 LeveledState 状态消费
     # 计算域入口：dot8/dot4/dot4_packed/unpack_nibble_u,s；层 2 设计 §八 Phase 2a）
     mkern/simd/simd_bindings.cpp
-    # AVX2 原语（2026-09-02 按原语域拆分，见 simd_dot8_avx2中间路径设计档_2026_09_02.md §二.5）：
+    # AVX2 原语（2026-09-02 按原语域拆分，见 simd_dot8_avx2中间路径立项_2026_09_02.md §二.5）：
     # dot 域（dot16 + dot8/dot4 AVX2 中间档）· decode 域 · float 归约域
     mkern/simd/x86/avx2_dot.cpp
     mkern/simd/x86/avx2_decode.cpp
     mkern/simd/x86/avx2_reduce.cpp
     mkern/simd/x86/avxvnni.cpp
     mkern/simd/x86/ssse3.cpp
-    # 服务器加速（P1，见 内部档案）：
+    # 服务器加速（P1，见 fixes_相关修复/simd服务器加速计划_2026_08_30.md）：
     # avx512*.cpp 单独加 -mavx512* 文件级选项（下方 set_source_files_properties），
     # 符号常驻产出；dispatch 层运行时 CPUID 检测决定是否选入（本机无 AVX-512 自动落低档）。
     mkern/simd/x86/avx512.cpp
     mkern/simd/x86/avx512vnni.cpp
     mkern/simd/arm/neon.cpp
-    # mkern/gemm 矩阵级微内核（R3，见 内部档案 §3.2）：
+    # mkern/gemm 矩阵级微内核（R3，见 fixes_相关修复/mkern微内核层实施计划_2026_09_03.md §3.2）：
     # gemm_i8（VNNI 面板 tile）/ gemm_i16（N 轴向量化）/ gemv_i8（逐行消费 simd::dot8）
     mkern/gemm/scalar.cpp
     mkern/gemm/gemm_dispatch.cpp
     mkern/gemm/x86/gemm_avx2vnni.cpp
     mkern/gemm/x86/gemm_avx2.cpp
     mkern/gemm/x86/gemm_avx512vnni.cpp
-    # mkern/nested 嵌套量化原语（nested_quant 设计档 §二，见 mkern/nested/nested_api.h；
+    # mkern/nested 嵌套量化原语（nested_quant 立项 §二，见 mkern/nested/nested_api.h；
     # 一次 SR 量化多档取，scalar→avx2→avx512 CPUID 链；avx512*.cpp per-file ISA 见下方）
     mkern/nested/scalar.cpp
     mkern/nested/nested_dispatch.cpp
@@ -232,7 +260,7 @@ set_source_files_properties(
     hc/ext/hc4_pshufb.c
     PROPERTIES LANGUAGE C)
 
-# AVX-512 服务器加速（P1，见 内部档案）：
+# AVX-512 服务器加速（P1，见 fixes_相关修复/simd服务器加速计划_2026_08_30.md）：
 # 仅 avx512*.cpp 启用 AVX-512 指令（文件级选项，不污染全局编译），符号常驻产出，
 # 供 simd_dispatch.cpp 无条件链接；运行时 __builtin_cpu_supports 检测决定是否选入。
 # 本机（Arrow Lake 无 AVX-512）可编译链接，只是运行时不会选用 AVX-512 路径。
@@ -276,7 +304,7 @@ set_source_files_properties(
     mkern/simd/scalar.cpp
     PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 
-# AVX2 / AVX-VNNI / SSSE3 实现（阶段 1，见 内部档案）：
+# AVX2 / AVX-VNNI / SSSE3 实现（阶段 1，见 fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md）：
 # 文件级选项显式声明各文件所需 ISA。当前全局 -mavx2 -mavxvnni 仍存在（冗余但无害），
 # 阶段 4 移除全局选项时，此处文件级选项接管，保证符号仍产出。
 # avx2_dot/avx2_decode.cpp: 需要 AVX2（2026-09-02 按域拆分）；
@@ -294,7 +322,7 @@ set_source_files_properties(
     mkern/simd/x86/ssse3.cpp
     PROPERTIES COMPILE_OPTIONS "-mssse3;-mavx2")
 
-# HC 层 per-file ISA（阶段 3，见 内部档案）：
+# HC 层 per-file ISA（阶段 3，见 fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md）：
 # hc 层为 AVX2 专用实现（各文件自带 CPUID 运行时检测；hc8_net.c 另有 SEH 探针）。
 # per-file 显式声明后，阶段 4 移除全局 -mavx2 -mavxvnni 时 hc 层行为不变
 # （符号常驻产出，运行时检测门控；与阶段 1 simd 层同纪律）。

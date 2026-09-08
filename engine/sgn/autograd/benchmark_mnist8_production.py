@@ -1,4 +1,4 @@
-﻿# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 zhugy-8086
 """benchmark_mnist8_production.py - SGN-A1 vs PyTorch float32 生产级速度基准
 
@@ -896,7 +896,9 @@ def main():
         prepare_npz()
     if args.arm == "sgn":
         sys.path.insert(0, REPO_ROOT)
-        exp = (os.path.join(HERE, "benchmark_mnist8_production_sgn_model.npz")
+        # F3（2026-09-08）：导出直写 tests/refs/ 正式位（资产随仓，verify 脚本同源）
+        exp = (os.path.join(REPO_ROOT, "engine", "sgn", "tests", "refs",
+                            "benchmark_mnist8_production_sgn_model.npz")
                if args.export_model else None)
         run_sgn_arm(cfg, out_path, export_model_path=exp)
     elif args.arm == "torch_native":

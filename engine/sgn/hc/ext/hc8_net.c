@@ -759,18 +759,58 @@ void hc4_residual_matmul_b(const hc4_t* a, const hc4_t* b,
     int32_t* S_lh = (int32_t*)calloc(out_size, sizeof(int32_t));
     int32_t* S_ll = (int32_t*)calloc(out_size, sizeof(int32_t));
 
-    /* 偏移修正项的预计算累加器（按 (l, m_idx) 对分别累加） */
-    int32_t* sum_ah = (int32_t*)calloc(out_size, sizeof(int32_t));  /* 每个 (i,j) 对应的 Σ_k a_h */
-    int32_t* sum_al = (int32_t*)calloc(out_size, sizeof(int32_t));
-    int32_t* sum_bh = (int32_t*)calloc(out_size, sizeof(int32_t));
-    int32_t* sum_bl = (int32_t*)calloc(out_size, sizeof(int32_t));
+    /* 偏移修正项预计算累加器（A1-4 修复，2026-09-08）：
+     * sum_ah[l][i] = Σ_k a_h[i][k] 只依赖 (l,i)；sum_bh[m2][j] = Σ_k b_h[k][j]
+     * 只依赖 (m2,j)。原标量版按 (i,j) 全矩阵累加，O(m·k·n + k·n·m)；
+     * 现对齐 SIMD 版（hc4_residual_matmul_b_simd）预计算，O(depth·(m·k + k·n))，
+     * 合并循环查表。数值与原实现逐位一致（每项求和顺序不变）。 */
+    int32_t* sum_ah[6];
+    int32_t* sum_al[6];
+    int32_t* sum_bh[6];
+    int32_t* sum_bl[6];
+    int sums_ok = 1;
+    for (int p = 0; p < 6; ++p) {
+        sum_ah[p] = (int32_t*)calloc(m, sizeof(int32_t));
+        sum_al[p] = (int32_t*)calloc(m, sizeof(int32_t));
+        sum_bh[p] = (int32_t*)calloc(n, sizeof(int32_t));
+        sum_bl[p] = (int32_t*)calloc(n, sizeof(int32_t));
+        if (sum_ah[p] == NULL || sum_al[p] == NULL ||
+            sum_bh[p] == NULL || sum_bl[p] == NULL) sums_ok = 0;
+    }
 
-    if (S_hh == NULL || S_hl == NULL || S_lh == NULL || S_ll == NULL ||
-        sum_ah == NULL || sum_al == NULL || sum_bh == NULL || sum_bl == NULL) {
+    if (S_hh == NULL || S_hl == NULL || S_lh == NULL || S_ll == NULL || !sums_ok) {
         free(c_double); free(S_hh); free(S_hl); free(S_lh); free(S_ll);
-        free(sum_ah); free(sum_al); free(sum_bh); free(sum_bl);
+        for (int p = 0; p < 6; ++p) {
+            free(sum_ah[p]); free(sum_al[p]); free(sum_bh[p]); free(sum_bl[p]);
+        }
         *out_scale = 1.0f;
         return;
+    }
+
+    /* 预计算偏移修正项（只对 depth 内的肢；求和顺序与原 (i,j) 版相同 → bit-exact） */
+    for (int l = 0; l <= a_depth; ++l) {
+        for (uint32_t i = 0; i < m; ++i) {
+            int32_t sh = 0, sl = 0;
+            for (uint32_t k_idx = 0; k_idx < k; ++k_idx) {
+                uint8_t a_byte = a[i * k + k_idx].packed[l];
+                sh += (int32_t)((a_byte >> 4) & 0x0F);
+                sl += (int32_t)(a_byte & 0x0F);
+            }
+            sum_ah[l][i] = sh;
+            sum_al[l][i] = sl;
+        }
+    }
+    for (int m2 = 0; m2 <= b_depth; ++m2) {
+        for (uint32_t j = 0; j < n; ++j) {
+            int32_t sh = 0, sl = 0;
+            for (uint32_t k_idx = 0; k_idx < k; ++k_idx) {
+                uint8_t b_byte = b[k_idx * n + j].packed[m2];
+                sh += (int32_t)((b_byte >> 4) & 0x0F);
+                sl += (int32_t)(b_byte & 0x0F);
+            }
+            sum_bh[m2][j] = sh;
+            sum_bl[m2][j] = sl;
+        }
     }
 
     /* 对每对 (l, m_idx) 做 4 次 int4×int4 矩阵乘 + 偏移修正 */
@@ -779,47 +819,17 @@ void hc4_residual_matmul_b(const hc4_t* a, const hc4_t* b,
         for (int m_idx = 0; m_idx <= b_depth; ++m_idx) {
             if (b_scales->scales[m_idx] == 0.0f) continue;
 
-            /* 清零累加器（每个 (l, m_idx) 对独立累加） */
+            /* 清零累加器（每个 (l, m_idx) 对独立累加；sum_* 已预计算无需清零） */
             memset(S_hh, 0, out_size * sizeof(int32_t));
             memset(S_hl, 0, out_size * sizeof(int32_t));
             memset(S_lh, 0, out_size * sizeof(int32_t));
             memset(S_ll, 0, out_size * sizeof(int32_t));
-            memset(sum_ah, 0, out_size * sizeof(int32_t));
-            memset(sum_al, 0, out_size * sizeof(int32_t));
-            memset(sum_bh, 0, out_size * sizeof(int32_t));
-            memset(sum_bl, 0, out_size * sizeof(int32_t));
 
             /* 4 次 int4×int4 矩阵乘 */
             hc4_matmul_kernel_int4(a, b, m, k, n, l, m_idx, 0, S_hh);
             hc4_matmul_kernel_int4(a, b, m, k, n, l, m_idx, 1, S_hl);
             hc4_matmul_kernel_int4(a, b, m, k, n, l, m_idx, 2, S_lh);
             hc4_matmul_kernel_int4(a, b, m, k, n, l, m_idx, 3, S_ll);
-
-            /* 计算偏移修正项（与 4 次 kernel 合并计算，避免重复遍历） */
-            /* sum_ah[i*n+j] = Σ_k a_h[i][k]（与 j 无关，但为简化先按 (i,j) 计算） */
-            /* 优化：sum_ah 只依赖 i，sum_bh 只依赖 j，可预计算。但这里为正确性先按 (i,j) 算 */
-            for (uint32_t i = 0; i < m; ++i) {
-                for (uint32_t k_idx = 0; k_idx < k; ++k_idx) {
-                    uint8_t a_byte = a[i * k + k_idx].packed[l];
-                    uint8_t a_h = (a_byte >> 4) & 0x0F;
-                    uint8_t a_l = a_byte & 0x0F;
-                    for (uint32_t j = 0; j < n; ++j) {
-                        sum_ah[i * n + j] += a_h;
-                        sum_al[i * n + j] += a_l;
-                    }
-                }
-            }
-            for (uint32_t j = 0; j < n; ++j) {
-                for (uint32_t k_idx = 0; k_idx < k; ++k_idx) {
-                    uint8_t b_byte = b[k_idx * n + j].packed[m_idx];
-                    uint8_t b_h = (b_byte >> 4) & 0x0F;
-                    uint8_t b_l = b_byte & 0x0F;
-                    for (uint32_t i = 0; i < m; ++i) {
-                        sum_bh[i * n + j] += b_h;
-                        sum_bl[i * n + j] += b_l;
-                    }
-                }
-            }
 
             /* 合并：acc = 256*S_hh + 16*S_hl + 16*S_lh + S_ll - 偏移修正 + 16384*k */
             double combined_scale = (double)a_scales->scales[l] * (double)b_scales->scales[m_idx];
@@ -829,8 +839,8 @@ void hc4_residual_matmul_b(const hc4_t* a, const hc4_t* b,
                 for (uint32_t j = 0; j < n; ++j) {
                     uint32_t idx = i * n + j;
                     int32_t total = 256 * S_hh[idx] + 16 * S_hl[idx] + 16 * S_lh[idx] + S_ll[idx]
-                                  - 2048 * sum_ah[idx] - 128 * sum_al[idx]
-                                  - 2048 * sum_bh[idx] - 128 * sum_bl[idx]
+                                  - 2048 * sum_ah[l][i] - 128 * sum_al[l][i]
+                                  - 2048 * sum_bh[m_idx][j] - 128 * sum_bl[m_idx][j]
                                   + 16384 * k_const;
                     c_double[idx] += (double)total * combined_scale;
                 }
@@ -879,7 +889,9 @@ void hc4_residual_matmul_b(const hc4_t* a, const hc4_t* b,
     *out_scale = new_scale;
     free(c_double);
     free(S_hh); free(S_hl); free(S_lh); free(S_ll);
-    free(sum_ah); free(sum_al); free(sum_bh); free(sum_bl);
+    for (int p = 0; p < 6; ++p) {
+        free(sum_ah[p]); free(sum_al[p]); free(sum_bh[p]); free(sum_bl[p]);
+    }
 }
 
 /* ============================================================================

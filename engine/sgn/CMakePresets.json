@@ -1,0 +1,47 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-clang-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "environment": {
+        "LLVM_ROOT": "c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc"
+      },
+      "cacheVariables": {
+        "LLVM_ROOT": "$env{LLVM_ROOT}",
+        "CMAKE_C_COMPILER": "$env{LLVM_ROOT}/bin/clang.exe",
+        "CMAKE_CXX_COMPILER": "$env{LLVM_ROOT}/bin/clang++.exe"
+      }
+    },
+    {
+      "name": "windows-clang-release",
+      "inherits": "windows-clang-base",
+      "displayName": "SGN 主构建（Clang 22.1.8 + libomp，Release）",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-clang-debug",
+      "inherits": "windows-clang-base",
+      "displayName": "SGN 调试构建（Debug + AddressSanitizer）",
+      "binaryDir": "${sourceDir}/build_debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-clang-release",
+      "configurePreset": "windows-clang-release"
+    },
+    {
+      "name": "windows-clang-debug",
+      "configurePreset": "windows-clang-debug"
+    }
+  ]
+}

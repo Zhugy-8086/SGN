@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -42,7 +42,9 @@ sgn_crash_*.log
 # Debug 测试独立构建目录（test_tape_hybrid / test_cpuid_caps_mock 等 Debug 块目标，
 # 2026-09-07：测试目标仅 Debug 构建定义，产物不入库）
 engine/sgn/build_debug/
+# 外部测试解压的 ELF 可执行（_remote_test_decompressed 是 EPYC 测试解压材料，
 # 源码/README 入库，编译出的二进制不入库；simd 层 2026-09-03 迁入 mkern/ 微内核层）
+engine/sgn/mkern/simd/_remote_test_decompressed/sgn_benchmark/sgn_benchmark
 
 # 外部测试产物（他人对提交前版本的测试记录，非本仓库内容，不入库）
 engine/sgn/mkern/simd/sgn_sourcecode_review.md
@@ -50,6 +52,7 @@ engine/sgn/mkern/simd/sgn_sourcecode_review.md
 # Models
 *.json
 !config/sgn_config.json
+!engine/sgn/CMakePresets.json
 # 显式保留 benchmark 结果和测试样本
 !tests/**/*.json
 !results/**/*.json
@@ -90,4 +93,4 @@ math_verification/publish/ultrametric_verification/
 math_verification/publish/integer_quant_math_verification/
 math_verification/publish/closed_form_quant_verification/
 math_verification/publish/ultrametric_verification/
-内部档案
+fixes_相关修复/level_scheduler_2_0/

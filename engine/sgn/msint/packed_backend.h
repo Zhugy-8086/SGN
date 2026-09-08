@@ -66,10 +66,13 @@ public:
     // ---- 批量 API（一次调用处理整个数组，消除 pybind11 逐元素开销）----
 
     // 批量读取多个 packed 值的所有槽位
+    // signed_flags：逐槽位符号标志，空 = 全无符号（与 from_bits 约定一致；
+    // A1-1 修复 2026-09-08：backward_int16 等 signed 场景此前无法走批量 API）
     // 返回扁平化 2D 数组 [n_values * n_slots]，行优先
     static std::vector<int64_t> batch_get_all(
         const std::vector<int>& bits_list,
-        const std::vector<uint64_t>& packed_values
+        const std::vector<uint64_t>& packed_values,
+        const std::vector<bool>& signed_flags = {}
     );
 
     // ---- 属性 ----
@@ -79,8 +82,11 @@ public:
     int total_bits() const { return total_bits_; }
     const std::vector<SlotSpec>& slots() const { return slots_; }
 
-    // 序列化
+    // 序列化（A1-3 修复：含 slots 数组，独立恢复完整状态）
     std::string serialize() const;  // 返回 JSON 字符串
+
+    // 从 serialize() 输出重建（手写固定格式解析，字段顺序与 serialize 输出一致）
+    static PackedBackend deserialize(const std::string& json);
 
 private:
     uint64_t packed_;

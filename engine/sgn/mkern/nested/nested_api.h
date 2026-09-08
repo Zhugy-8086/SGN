@@ -1,7 +1,7 @@
-﻿// nested_api.h - mkern 嵌套量化原语接口（纯声明，无实现）
+// nested_api.h - mkern 嵌套量化原语接口（纯声明，无实现）
 //
-// 背景：内部档案 §一
-// （接口契约冻结稿，签名勿改）。方向 A 结论定案（同目录 方向A结论定案_嵌套量化_2026_09_05.md）
+// 背景：fixes_相关修复/level_scheduler_2_0/nested_quant立项_2026_09_05.md §一
+// （接口契约冻结稿，签名勿改）。方向 A 判决（同目录 方向A判决_嵌套量化_2026_09_05.md）
 // A-GO 三证据：切换一致性 1.58M×（探针 seeded 复现）+ 归一化口径精度 + 单码多档成本。
 //
 // 结构（v2 设计）：一次 SR 量化到最细格 u 产出单一 int32 码字 I；各档 dequant =
@@ -26,7 +26,7 @@
 //        z =  z ^ (z >> 31)                    // 全程 uint64 回绕
 //        U_i = (z >> 11) * 0x1.0p-53           // 53 位尾数，[0,1)
 //   b. SR 判式（Bernoulli 形式，与 sr_kernel.cpp 同构）：x = (double)h[i] / (double)u
-//      （f64 口径）；I = floor(x)，若 U_i < (x − floor(x)) 则 I += 1。与设计档注释的
+//      （f64 口径）；I = floor(x)，若 U_i < (x − floor(x)) 则 I += 1。与立项注释的
 //      floor(x + U[0,1)) 同分布同 SR 语义（floor(x+U) = floor(x) + [1−U < frac]），
 //      采用 Bernoulli 形式是冻结决策：|x| 接近 2^31 时字面形式在 f64 下丢失 U 低
 //      位（ulp(x) ≈ 2^−21），Bernoulli 形式对 |x| < 2^52 精确。
@@ -46,8 +46,22 @@
 //     - h 元素有限（NaN/Inf 行为未定义）；u > 0（u ≤ 0 行为未定义）；
 //     - level ∈ {4,8,16,32}（其他值：nested_dequant 无操作，out 不修改——这一项
 //       是防御性检查而非 UB，shift 安全）；
-//     - n ≥ 0（n = 0 合法，无操作）。
-//   已知吸收态（设计档 §四）：h = 0 → frac = 0 → I = 0 → 全档 dequant = 0
+//     - n ≥ 0（n = 0 合法，无操作）；
+//     - **code 输入域（2026-09-08 B3 补，docs/问题追踪/B3判读_输入域契约与超域
+//       行为_2026_09_08.md）**：dequant/view_codes 的 code[i] 须 ∈ [−2^31, 2^31−1]
+//       （nested_quant_i32 的产出保证）。**域外（wild int64）输入行为良定义、
+//       无 UB、但超契约**，两条精确边界（sympy 符号验证）：
+//         (a) rtn_quotient 内部 floor 商路径（`q = I>>m` 与 frac 的 `q<<m`）对
+//             **任意** int64 无溢出——`q<<m = I − r ∈ [I−2^m+1, I]`，|值| < 2^63；
+//         (b) 值重建**必须走 double 域**（`(double)q · 2^m`，现行为）：若改用
+//             int64 `q_rtn<<m`，wild 输入 I 接近 INT64_MAX 时 q_rtn = 2^39、
+//             `q_rtn<<m = 2^63` 恰回绕 INT64_MIN——**有符号左移溢出 UB**（三档
+//             m ∈ {28,24,16} 全触发）。这是**实现约束而非规格自由度**，任何
+//             "优化"改回 int64 重建即引入 UB，禁止。
+//       精度注记：域内 |q| ≤ 2^15、wild |q| ≤ 2^39+1 均 < 2^53 ⟹ (double)q
+//       精确；q·2^m 为 2 的幂（double 精确）；wild 下输出值可超 float 域
+//       （→ ±inf，IEEE 良定义）。boundary N2 已覆盖 wild/extreme 码字。
+//   已知吸收态（立项 §四）：h = 0 → frac = 0 → I = 0 → 全档 dequant = 0
 //   （SR 在格点上无随机性，残差恒 0），调用方文档注明。
 
 #pragma once
@@ -80,6 +94,13 @@ void nested_dequant(float* out, const int64_t* code, int64_t n,
 //   Q4 → int4/dot4——S3 衔接评估 B3/B4 的计算域入口，嵌套 Q16 视图码 ∈ int16
 //   直接过 pair 载体恒等式）。标量即终态（整数 shift+cast，无热路径，无 SIMD
 //   计划）；level 校验同 dequant（域外无操作）；n=0 合法。
+//   承载注记（2026-09-08 B2 判读，docs/问题追踪/B2判读_nested视图码域与承载_
+//   2026_09_08.md）：本 API 的 RTN 码域含 2^b+1 个值，**b-bit 容器不可承载**
+//   （int_b 与 u8 偏置均溢出，计数原理 2^b+1 > 2^b）。**floor 读法**
+//   （`code >> (32−level)`，算术右移）域收窄为 [−2^(b−1), 2^(b−1)−1] 恰 2^b 值，
+//   此时 u8 偏置（q_u8 = q + 2^(b−1) ∈ [0, 2^b−1]）可承载——层 2 消费即走此路
+//   （点积恒等式 2^m·Σq_f·w = 2^m·(dot(q_u8,w) − 2^(b−1)·Σw)，bit-exact）。
+//   若需 RTN 忠实的 b-bit 视图消费，必须走 int16/pair 承载（层 2 案 b）。
 void nested_view_codes(const int64_t* code, int64_t n, int level, int64_t* out);
 
 // ---- 后端标识 / 调度（与 gemm_dispatch 同构：magic static + CPUID + 环境变量钩子）----

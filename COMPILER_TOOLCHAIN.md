@@ -1,21 +1,33 @@
 # 编译器工具链说明
 
 > **位置**：项目根目录最显眼处
-> **最后更新**：2026-08-03
+> **最后更新**：2026-09-08（G1 阶段 1：声明式 preset 与 ISA 声明表互链）
 > **用途**：本项目 C/C++ 开发所用的全部编译器、构建工具的安装位置与使用方式
+
+---
+
+## ⭐ 权威声明点（G1 阶段 1，2026-09-08 起）
+
+- **配置声明**：`engine/sgn/CMakePresets.json`——Clang 路径/生成器/C++23/libomp
+  已声明式入仓（`cmake --preset windows-clang-release` 一步配置；覆盖方式见
+  preset 文件头注释）。本文件描述安装位置与原理，**配置以 preset 为准**。
+- **ISA 声明表**：`engine/sgn/mkern/simd/isa_registry.md`——每条 SIMD 路径的
+  四元组（实现文件 × per-file 编译参数 × CPUID 检测位 × 标量回退/验证）权威
+  登记点；**新 SIMD 路径先登记再实现**，CPUID 位定义以该表与 Intel SDM 逐位
+  核对为准。
 
 ---
 
 ## 0. 一句话索引
 
-所有编译器工具链统一部署在 **`<ToolchainRoot>\`** 目录下，共 4 套工具：
+所有编译器工具链统一部署在 **`c:\kaffj\`** 目录下，共 4 套工具：
 
 | 工具 | 版本 | 路径 | 角色 |
 |------|------|------|------|
-| **Clang/LLVM** | 22.1.8 | `<LLVM_ROOT>\bin\` | 🔴 底层优化开发（主力） |
-| **GCC (MinGW64)** | 16.1.0 | `<MSYS2_ROOT>\mingw64\bin\` | 🟡 后期生产测试 |
-| **TCC** | 0.9.27 | `<TCC_ROOT>\tcc\tcc.exe` | 🟢 快速 C 原型 |
-| **CMake** | 4.4.2 | `<CMake_ROOT>\bin\` | 🔵 构建系统 |
+| **Clang/LLVM** | 22.1.8 | `c:\kaffj\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\` | 🔴 底层优化开发（主力） |
+| **GCC (MinGW64)** | 16.1.0 | `c:\kaffj\msys64\mingw64\bin\` | 🟡 后期生产测试 |
+| **TCC** | 0.9.27 | `c:\kaffj\tcc\tcc\tcc.exe` | 🟢 快速 C 原型 |
+| **CMake** | 4.4.2 | `c:\kaffj\cmake\bin\` | 🔵 构建系统 |
 
 另：**MSVC 19.44** 已安装于 VS 2022 BuildTools，仅作为 Windows SDK 链接备用。
 
@@ -24,7 +36,7 @@
 ## 1. 目录结构
 
 ```
-<ToolchainRoot>\
+c:\kaffj\
 ├── clang+llvm-22.1.8-x86_64-pc-windows-msvc\   ← Clang/LLVM (主力开发)
 │   └── bin\
 │       ├── clang.exe          ← C 编译器
@@ -58,16 +70,16 @@
 以下 4 条路径已写入**用户环境变量**（2026-08-01 配置完成）：
 
 ```text
-<CMake_ROOT>\bin
-<LLVM_ROOT>\bin
-<MSYS2_ROOT>\mingw64\bin
-<TCC_ROOT>\tcc
+c:\kaffj\cmake\bin
+c:\kaffj\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin
+c:\kaffj\msys64\mingw64\bin
+c:\kaffj\tcc\tcc
 ```
 
 **注意**：新开终端窗口才会生效。当前终端可手动执行：
 
 ```powershell
-$env:Path += ";<CMake_ROOT>\bin;<LLVM_ROOT>\bin;<MSYS2_ROOT>\mingw64\bin;<TCC_ROOT>\tcc"
+$env:Path += ";c:\kaffj\cmake\bin;c:\kaffj\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin;c:\kaffj\msys64\mingw64\bin;c:\kaffj\tcc\tcc"
 ```
 
 ---
@@ -89,7 +101,7 @@ $env:Path += ";<CMake_ROOT>\bin;<LLVM_ROOT>\bin;<MSYS2_ROOT>\mingw64\bin;<TCC_RO
 
 ### 3.3 为什么不用 MSVC 作主力
 
-MSVC 存在 **AVX-VNNI 代码生成 bug**（详见 [avx_vnni_compiler_requirement]），因此底层优化开发改用 Clang。
+MSVC 存在 **AVX-VNNI 代码生成 bug**（详见 [avx_vnni_compiler_requirement](fixes_相关修复/architecture/avx_vnni_compiler_requirement_2026_07_30.md)），因此底层优化开发改用 Clang。
 
 ---
 
@@ -122,7 +134,7 @@ g++ -O3 -mavx2 -mavxvnni -std=c++23 -Wall -Wextra -o output.exe source.cpp
 g++ -O3 -mavx2 -pg -std=c++23 -o output_prof.exe source.cpp
 
 # 链接 MSYS2 库
-g++ -O3 -std=c++23 -I "<MSYS2_ROOT>\mingw64\include" -L "<MSYS2_ROOT>\mingw64\lib" -o output.exe source.cpp -lstdc++
+g++ -O3 -std=c++23 -I "c:\kaffj\msys64\mingw64\include" -L "c:\kaffj\msys64\mingw64\lib" -o output.exe source.cpp -lstdc++
 ```
 
 ### 4.3 CMake 构建项目（推荐用 Clang）
@@ -145,7 +157,7 @@ cmake --build build_gcc
 > 运行时 CPUID/SEH 检测门控 → 同一二进制在无对应指令集的 CPU 上自动回退，不再
 > illegal instruction（此前全局宏会让二进制硬性要求 AVX-VNNI）。手工编译单文件时按指令集
 > 显式加对应 flag（本手册 §4.1/4.2 示例即此用法）。详见
-> [全局AVX编译参数移除调查](engine/sgn/内部档案)。
+> [全局AVX编译参数移除调查](engine/sgn/fixes_相关修复/全局AVX编译参数移除调查_2026_08_31.md)。
 
 ### 4.4 TCC 快速 C 原型
 
@@ -230,10 +242,10 @@ Python 3.8+ 不从 PATH 加载 DLL，`libomp.dll` 必须与 `.pyd` 同目录。C
 ```cmake
 # 链接 libomp.lib
 target_link_libraries(sgn PRIVATE
-    "<LLVM_ROOT>/lib/libomp.lib")
+    "c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/lib/libomp.lib")
 
 # 复制 libomp.dll 到 build 目录
-set(LIBOMP_DLL "<LLVM_ROOT>/bin/libomp.dll")
+set(LIBOMP_DLL "c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/libomp.dll")
 add_custom_command(TARGET sgn POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${LIBOMP_DLL}" "$<TARGET_FILE_DIR:sgn>"
@@ -286,7 +298,7 @@ libgomp 仅存在于本地测试构建，永不进入分发物。
 PATH 未生效，新开终端窗口，或手动执行：
 
 ```powershell
-$env:Path += ";<LLVM_ROOT>\bin"
+$env:Path += ";c:\kaffj\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin"
 ```
 
 ### 8.2 "cannot find -lstdc++"（MinGW 链接错误）
@@ -295,7 +307,7 @@ $env:Path += ";<LLVM_ROOT>\bin"
 
 ```powershell
 Get-Command g++ | Select-Object Source
-# 应显示 <MSYS2_ROOT>\mingw64\bin\g++.exe
+# 应显示 c:\kaffj\msys64\mingw64\bin\g++.exe
 ```
 
 ### 9.3 CMake 找不到编译器
@@ -303,7 +315,7 @@ Get-Command g++ | Select-Object Source
 显式指定编译器：
 
 ```powershell
-cmake -B build -DCMAKE_C_COMPILER="<LLVM_ROOT>/bin/clang.exe" -DCMAKE_CXX_COMPILER="<LLVM_ROOT>/bin/clang++.exe"
+cmake -B build -DCMAKE_C_COMPILER="c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/clang.exe" -DCMAKE_CXX_COMPILER="c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/bin/clang++.exe"
 ```
 
 ### 9.4 LLVM 版本确认
@@ -322,7 +334,7 @@ clang --version
 ls engine\sgn\build\libomp.dll
 
 # 手动复制（CMake POST_BUILD 应自动完成）
-copy "<LLVM_ROOT>\bin\libomp.dll" engine\sgn\build\
+copy "c:\kaffj\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\libomp.dll" engine\sgn\build\
 ```
 
 ### 9.6 "undefined symbol: __kmpc_for_static_fini"
@@ -332,7 +344,7 @@ Clang 生成的 OpenMP 符号 (`__kmpc_*`) 与 MSVC VCOMP140 不兼容。不能�
 ```cmake
 # 正确: 链接 libomp
 target_link_libraries(sgn PRIVATE
-    "<LLVM_ROOT>/lib/libomp.lib")
+    "c:/kaffj/clang+llvm-22.1.8-x86_64-pc-windows-msvc/lib/libomp.lib")
 
 # 错误: 不能用 vcomp.lib (符号不兼容)
 # target_link_libraries(sgn PRIVATE vcomp.lib)  # ← 会报 __kmpc_* undefined
@@ -361,7 +373,7 @@ target_link_libraries(sgn PRIVATE
 
 **收益 3：HC 库整理的契机**
 
-合并时可顺带将 `内部档案` 下的 C 代码整合到 `engine/sgn/hc/`，统一 HC 源码组织。
+合并时可顺带将 `fixes_相关修复/hc_v1.3_net_extension/` 下的 C 代码整合到 `engine/sgn/hc/`，统一 HC 源码组织。
 
 ### 10.2 已完成项总结
 
@@ -416,7 +428,7 @@ Clang 迁移已完成，.pyd 合并已完成（5 个独立 .pyd 全部合并为 
 
 - ✅ **col2im perf 测试容差已收紧**（2026-08-03）：< 0.1ms 保持 3.0x（OpenMP 开销噪声），< 1ms 从 20%→10%，≥ 1ms 从 10%→5%
 - ✅ **Autograd 性能基准测试已完成**（2026-08-03）：Task 6.3，B=4/8/16 下 fwd+bwd 和 fwd only 对比，C++ 比 PyTorch 慢 3-5x（fwd+bwd），瓶颈在 backward
-- ✅ HC 源码整合已完成（2026-08-03）：`内部档案` 下 15 个源文件移入 `engine/sgn/hc/ext/`，`hc/col2im.cpp` 头文件引用路径修复，编译验证通过
+- ✅ HC 源码整合已完成（2026-08-03）：`fixes_相关修复/hc_v1.3_net_extension/` 下 15 个源文件移入 `engine/sgn/hc/ext/`，`hc/col2im.cpp` 头文件引用路径修复，编译验证通过
 - ✅ C++23 升级已完成（2026-08-03）：`-std=c++20` → `-std=c++23`，Tensanor 类引入 `std::mdspan` 实现 6 个视图接口，`hc16ms_bswap16` 替换为 `std::byteswap`
 - ✅ `batchnorm2d` 零拷贝适配已完成（2026-08-03）：`bn2d_reshape_fwd`/`bn2d_reshape_bwd` 从手动三重循环拷贝改为 `permute` + `reshape` 零拷贝链，消除前向和反向各一次 O(B*C*H*W) 的完整数据拷贝
 - ✅ Autograd 性能优化（AVX2/AVX-VNNI/AVX-512 + OpenMP）已完成（2026-08-03）：

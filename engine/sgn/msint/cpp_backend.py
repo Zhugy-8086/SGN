@@ -144,8 +144,8 @@ class _PyPackedBackendWrapper:
 # 批量 API: batch_get_all
 # ============================================================
 
-def _batch_get_all_cpp(bits_list, packed_array):
-    """C++ 批量读取（numpy 零拷贝）"""
+def _batch_get_all_cpp(bits_list, packed_array, signed_flags=None):
+    """C++ 批量读取（numpy 零拷贝）；signed_flags 逐槽符号标志，None=全无符号（A1-1）"""
     import numpy as np
     import sgn as _sgn_mod
     if (isinstance(packed_array, np.ndarray)
@@ -154,11 +154,13 @@ def _batch_get_all_cpp(bits_list, packed_array):
         arr = packed_array
     else:
         arr = np.ascontiguousarray(packed_array, dtype=np.uint64)
-    return _sgn_mod.batch_get_all(bits_list, arr)
+    if signed_flags is None:
+        return _sgn_mod.batch_get_all(bits_list, arr)
+    return _sgn_mod.batch_get_all(bits_list, arr, list(signed_flags))
 
 
-def _batch_get_all_py(bits_list, packed_values):
-    """Python fallback 批量读取"""
+def _batch_get_all_py(bits_list, packed_values, signed_flags=None):
+    """Python fallback 批量读取（A1-1：支持逐槽符号扩展，与 C++ 口径一致）"""
     import numpy as np
     n_slots = len(bits_list)
     n_values = len(packed_values)
@@ -173,9 +175,25 @@ def _batch_get_all_py(bits_list, packed_values):
         offsets.append(off)
     masks = [(1 << b) - 1 if b < 64 else ~0 for b in bits_list]
 
+    flags = [False] * n_slots
+    if signed_flags is not None:
+        for j in range(min(len(signed_flags), n_slots)):
+            flags[j] = bool(signed_flags[j])
+
     for i, pv in enumerate(packed_values):
         for j in range(n_slots):
-            result[i, j] = (pv >> offsets[j]) & masks[j]
+            raw = (pv >> offsets[j]) & masks[j]
+            if flags[j]:
+                b = bits_list[j]
+                if b == 64:
+                    val = raw - (1 << 64) if raw & (1 << 63) else raw
+                elif raw & (1 << (b - 1)):
+                    val = raw - (1 << b)
+                else:
+                    val = raw
+            else:
+                val = raw
+            result[i, j] = val
     return result
 
 
@@ -190,8 +208,8 @@ else:
 # 完整解码流水线: batch_decode_to_float
 # ============================================================
 
-def _batch_decode_to_float_cpp(bits_list, packed_array, scale):
-    """C++ 完整解码（packed → concat → signed → float32 × scale）"""
+def _batch_decode_to_float_cpp(bits_list, packed_array, scale, signed=True):
+    """C++ 完整解码（packed → concat → signed → float32 × scale）；A1-1：signed 显式化"""
     import numpy as np
     import sgn as _sgn_mod
     # 跳过 ascontiguousarray 开销：已是 uint64 连续数组时直接使用
@@ -201,11 +219,11 @@ def _batch_decode_to_float_cpp(bits_list, packed_array, scale):
         arr = packed_array
     else:
         arr = np.ascontiguousarray(packed_array, dtype=np.uint64)
-    return _sgn_mod.batch_decode_to_float(bits_list, arr, float(scale))
+    return _sgn_mod.batch_decode_to_float(bits_list, arr, float(scale), bool(signed))
 
 
-def _batch_decode_to_float_into_cpp(bits_list, packed_array, scale, output):
-    """C++ in-place 解码：写入预分配的 output 数组，消除分配开销"""
+def _batch_decode_to_float_into_cpp(bits_list, packed_array, scale, output, signed=True):
+    """C++ in-place 解码：写入预分配的 output 数组，消除分配开销；A1-1：signed 显式化"""
     import numpy as np
     import sgn as _sgn_mod
     if (isinstance(packed_array, np.ndarray)
@@ -214,11 +232,12 @@ def _batch_decode_to_float_into_cpp(bits_list, packed_array, scale, output):
         arr = packed_array
     else:
         arr = np.ascontiguousarray(packed_array, dtype=np.uint64)
-    _sgn_mod.batch_decode_to_float_into(bits_list, arr, float(scale), output)
+    _sgn_mod.batch_decode_to_float_into(bits_list, arr, float(scale), output,
+                                        bool(signed))
 
 
-def _batch_decode_to_float_py(bits_list, packed_values, scale):
-    """Python fallback 完整解码"""
+def _batch_decode_to_float_py(bits_list, packed_values, scale, signed=True):
+    """Python fallback 完整解码（A1-1：signed=False 时为无符号 concat 视角）"""
     import numpy as np
     n_slots = len(bits_list)
     n_values = len(packed_values)
@@ -239,8 +258,8 @@ def _batch_decode_to_float_py(bits_list, packed_values, scale):
         for j in range(n_slots):
             slot_val = (pv >> offsets[j]) & masks[j]
             concat_val = (concat_val << bits_list[j]) | slot_val
-        # 符号扩展
-        if total < 64:
+        # 符号扩展（A1-1：signed=False 跳过）
+        if signed and total < 64:
             sign_bit = 1 << (total - 1)
             if concat_val & sign_bit:
                 concat_val |= ~((1 << total) - 1)
@@ -248,9 +267,10 @@ def _batch_decode_to_float_py(bits_list, packed_values, scale):
     return result
 
 
-def _batch_decode_to_float_into_py(bits_list, packed_values, scale, output):
+def _batch_decode_to_float_into_py(bits_list, packed_values, scale, output,
+                                   signed=True):
     """Python fallback in-place 解码"""
-    result = _batch_decode_to_float_py(bits_list, packed_values, scale)
+    result = _batch_decode_to_float_py(bits_list, packed_values, scale, signed)
     output[:len(result)] = result
 
 
