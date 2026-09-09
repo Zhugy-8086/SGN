@@ -1,11 +1,9 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master, develop]
-  pull_request:
-    branches: [main, master, develop]
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:  # 2026-09-10 降级为手动触发：test job 依赖带 libomp 的
+                      # LLVM Windows 工具链（当前仓库无此配置），libomp 方案
+                      # 确定后恢复 push/PR 触发
 
 # 取消同分支上正在进行的冗余运行
 concurrency:
